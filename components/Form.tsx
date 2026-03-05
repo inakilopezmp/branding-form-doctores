@@ -29,10 +29,7 @@ type FormState = {
   simbolos: string;
   coloresPreferidos: string;
   coloresNoGustan: string;
-  estiloMinimalista: boolean;
-  estiloModerno: boolean;
-  estiloElegante: boolean;
-  estiloMedicoClasico: boolean;
+  estiloLogo: "minimalista" | "moderno" | "elegante" | "medico_clasico" | "";
   linksReferencias: string;
   recetaNombre: string;
   recetaEspecialidad: string;
@@ -57,6 +54,8 @@ type FormState = {
   comentariosAdicionales: string;
 };
 
+const BRAND = "#6556F2";
+
 const initialState: FormState = {
   nombreCompleto: "",
   especialidad: "",
@@ -78,10 +77,7 @@ const initialState: FormState = {
   simbolos: "",
   coloresPreferidos: "",
   coloresNoGustan: "",
-  estiloMinimalista: true,
-  estiloModerno: false,
-  estiloElegante: false,
-  estiloMedicoClasico: false,
+  estiloLogo: "",
   linksReferencias: "",
   recetaNombre: "",
   recetaEspecialidad: "",
@@ -111,6 +107,12 @@ export default function Form() {
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
+  const [redirecting, setRedirecting] = useState(false);
+  const [step, setStep] = useState(1);
+  const [invalidFields, setInvalidFields] = useState<string[]>([]);
+
+  const TOTAL_STEPS = 7;
+  const isLastStep = step === TOTAL_STEPS;
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -122,6 +124,62 @@ export default function Form() {
       ...prev,
       [name]: type === "checkbox" ? checked : value
     }));
+    setInvalidFields((prev) => prev.filter((f) => f !== name));
+  };
+
+  type StepValidation = { message: string | null; fields: string[] };
+
+  const validateStep = (s: number): StepValidation => {
+    if (s === 1) {
+      const fields: string[] = [];
+      if (!form.nombreCompleto.trim()) fields.push("nombreCompleto");
+      if (!form.especialidad.trim()) fields.push("especialidad");
+      if (!form.subespecialidad.trim()) fields.push("subespecialidad");
+      if (fields.length)
+        return {
+          message: "Por favor completa los campos obligatorios marcados.",
+          fields
+        };
+      return { message: null, fields: [] };
+    }
+    if (s === 2) {
+      const fields: string[] = [];
+      if (!form.telefono.trim()) fields.push("telefono");
+      if (!form.whatsapp.trim()) fields.push("whatsapp");
+      if (!form.direccionConsultorio.trim()) fields.push("direccionConsultorio");
+      if (fields.length)
+        return {
+          message: "Por favor completa los campos obligatorios marcados.",
+          fields
+        };
+      return { message: null, fields: [] };
+    }
+    if (s === 5) {
+      const fields: string[] = [];
+      if (!form.recetaNombre.trim()) fields.push("recetaNombre");
+      if (!form.recetaTelefono.trim()) fields.push("recetaTelefono");
+      if (!form.recetaDireccion.trim()) fields.push("recetaDireccion");
+      if (!form.tamanoReceta) fields.push("tamanoReceta");
+      if (fields.length)
+        return {
+          message: "Por favor completa los campos obligatorios marcados.",
+          fields
+        };
+      return { message: null, fields: [] };
+    }
+    if (s === 6) {
+      const fields: string[] = [];
+      if (!form.tarjetaNombre.trim()) fields.push("tarjetaNombre");
+      if (!form.tarjetaTituloProfesional.trim()) fields.push("tarjetaTituloProfesional");
+      if (!form.orientacionTarjeta) fields.push("orientacionTarjeta");
+      if (fields.length)
+        return {
+          message: "Por favor completa los campos obligatorios marcados.",
+          fields
+        };
+      return { message: null, fields: [] };
+    }
+    return { message: null, fields: [] };
   };
 
   const validate = () => {
@@ -138,6 +196,7 @@ export default function Form() {
     e.preventDefault();
     setErrorMsg(null);
     setInfoMsg(null);
+    setRedirecting(false);
 
     const validationError = validate();
     if (validationError) {
@@ -162,6 +221,8 @@ export default function Form() {
       }
 
       setInfoMsg("¡Gracias! Redirigiendo al pago de Stripe...");
+      setLoading(false);
+      setRedirecting(true);
       setTimeout(() => {
         window.location.href = STRIPE_URL;
       }, 1500);
@@ -172,7 +233,9 @@ export default function Form() {
       );
       setInfoMsg(null);
     } finally {
-      setLoading(false);
+      if (!redirecting) {
+        setLoading(false);
+      }
     }
   };
 
@@ -181,12 +244,69 @@ export default function Form() {
 
   const labelClass = "block text-sm font-medium text-slate-700 mb-1";
   const inputClass =
-    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white";
+    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6556F2] focus:border-[#6556F2] bg-white";
   const textareaClass =
-    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-sky-500 focus:border-sky-500 bg-white min-h-[80px] resize-y";
+    "w-full rounded-lg border border-slate-200 px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6556F2] focus:border-[#6556F2] bg-white min-h-[80px] resize-y";
+
+  const handleNext = () => {
+    const { message, fields } = validateStep(step);
+    if (message) {
+      setErrorMsg(message);
+      setInvalidFields(fields);
+      return;
+    }
+    setErrorMsg(null);
+    setInvalidFields([]);
+    if (step < TOTAL_STEPS) {
+      setStep((prev) => prev + 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const handlePrev = () => {
+    setInvalidFields([]);
+    if (step > 1) {
+      setStep((prev) => prev - 1);
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+  };
+
+  const inputClassWithInvalid = (name: string) => {
+    const base =
+      "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6556F2] focus:border-[#6556F2] bg-white";
+    const border = invalidFields.includes(name)
+      ? "border-red-500"
+      : "border-slate-200";
+    return `${base} ${border}`;
+  };
+  const textareaClassWithInvalid = (name: string) => {
+    const base =
+      "w-full rounded-lg border px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-[#6556F2] focus:border-[#6556F2] bg-white min-h-[80px] resize-y";
+    const border = invalidFields.includes(name)
+      ? "border-red-500"
+      : "border-slate-200";
+    return `${base} ${border}`;
+  };
+
+  const progress = (step / TOTAL_STEPS) * 100;
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
+      <div className="space-y-2 mb-4">
+        <div className="flex items-center justify-between text-xs text-slate-600">
+          <span>
+            Paso {step} de {TOTAL_STEPS}
+          </span>
+          <span>{Math.round(progress)}%</span>
+        </div>
+        <div className="h-2 w-full rounded-full bg-slate-200 overflow-hidden">
+          <div
+            className="h-full transition-all duration-300 ease-out"
+            style={{ width: `${progress}%`, backgroundColor: BRAND }}
+          />
+        </div>
+      </div>
+
       {(errorMsg || infoMsg) && (
         <div className="space-y-2 mb-4">
           {errorMsg && (
@@ -202,7 +322,8 @@ export default function Form() {
         </div>
       )}
 
-      <section className={sectionClass}>
+      {step === 1 && (
+        <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 1 — Información del doctor
         </h2>
@@ -214,7 +335,7 @@ export default function Form() {
             <input
               id="nombreCompleto"
               name="nombreCompleto"
-              className={inputClass}
+              className={inputClassWithInvalid("nombreCompleto")}
               value={form.nombreCompleto}
               onChange={handleChange}
               required
@@ -227,7 +348,7 @@ export default function Form() {
             <input
               id="especialidad"
               name="especialidad"
-              className={inputClass}
+              className={inputClassWithInvalid("especialidad")}
               value={form.especialidad}
               onChange={handleChange}
               required
@@ -235,14 +356,16 @@ export default function Form() {
           </div>
           <div>
             <label className={labelClass} htmlFor="subespecialidad">
-              Subespecialidad
+              Subespecialidad *
             </label>
             <input
               id="subespecialidad"
               name="subespecialidad"
-              className={inputClass}
+              className={inputClassWithInvalid("subespecialidad")}
               value={form.subespecialidad}
               onChange={handleChange}
+              placeholder='Ej: No tengo'
+              required
             />
           </div>
           <div>
@@ -283,7 +406,9 @@ export default function Form() {
           </div>
         </div>
       </section>
+      )}
 
+      {step === 2 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 2 — Información de contacto
@@ -291,12 +416,12 @@ export default function Form() {
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass} htmlFor="telefono">
-              Teléfono *
+              Teléfono (el que verán los pacientes) *
             </label>
             <input
               id="telefono"
               name="telefono"
-              className={inputClass}
+              className={inputClassWithInvalid("telefono")}
               value={form.telefono}
               onChange={handleChange}
               required
@@ -304,14 +429,15 @@ export default function Form() {
           </div>
           <div>
             <label className={labelClass} htmlFor="whatsapp">
-              WhatsApp
+              WhatsApp *
             </label>
             <input
               id="whatsapp"
               name="whatsapp"
-              className={inputClass}
+              className={inputClassWithInvalid("whatsapp")}
               value={form.whatsapp}
               onChange={handleChange}
+              required
             />
           </div>
           <div>
@@ -342,14 +468,15 @@ export default function Form() {
           </div>
           <div className="md:col-span-2">
             <label className={labelClass} htmlFor="direccionConsultorio">
-              Dirección del consultorio
+              Dirección del consultorio *
             </label>
             <input
               id="direccionConsultorio"
               name="direccionConsultorio"
-              className={inputClass}
+              className={inputClassWithInvalid("direccionConsultorio")}
               value={form.direccionConsultorio}
               onChange={handleChange}
+              required
             />
           </div>
           <div>
@@ -418,7 +545,9 @@ export default function Form() {
           </div>
         </div>
       </section>
+      )}
 
+      {step === 3 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 3 — Preferencias del logo
@@ -436,7 +565,7 @@ export default function Form() {
                 value="nombre_completo"
                 checked={form.logoTipo === "nombre_completo"}
                 onChange={handleChange}
-                className="border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Nombre completo</span>
             </label>
@@ -447,7 +576,7 @@ export default function Form() {
                 value="iniciales"
                 checked={form.logoTipo === "iniciales"}
                 onChange={handleChange}
-                className="border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Iniciales</span>
             </label>
@@ -458,7 +587,7 @@ export default function Form() {
                 value="nombre_clinica"
                 checked={form.logoTipo === "nombre_clinica"}
                 onChange={handleChange}
-                className="border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Nombre de clínica</span>
             </label>
@@ -507,54 +636,66 @@ export default function Form() {
         </div>
 
         <div>
-          <p className="text-sm font-medium text-slate-700 mb-2">
-            Estilo del logo (puedes seleccionar varios)
+          <p className="text-sm font-medium text-slate-700 mb-3">
+            Estilo del logo (selecciona uno)
           </p>
-          <div className="grid md:grid-cols-4 gap-2 text-sm">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="estiloMinimalista"
-                checked={form.estiloMinimalista}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>Minimalista</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="estiloModerno"
-                checked={form.estiloModerno}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>Moderno</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="estiloElegante"
-                checked={form.estiloElegante}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>Elegante</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="estiloMedicoClasico"
-                checked={form.estiloMedicoClasico}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>Médico clásico</span>
-            </label>
+          <div className="grid grid-cols-2 gap-4">
+            {[
+              {
+                value: "minimalista",
+                label: "Minimalista",
+                src: "/tarjeta-minimalista.jpg",
+              },
+              {
+                value: "moderno",
+                label: "Moderno",
+                src: "/tarjeta-moderno.jpg",
+              },
+              {
+                value: "elegante",
+                label: "Elegante",
+                src: "/tarjeta-elegante.jpg",
+              },
+              {
+                value: "medico_clasico",
+                label: "Médico clásico",
+                src: "/tarjeta-medico-clasico.jpg",
+              },
+            ].map(({ value, label, src }) => (
+              <label
+                key={value}
+                className={`relative flex flex-col rounded-xl border-2 overflow-hidden cursor-pointer transition-all duration-200 ${
+                  form.estiloLogo === value
+                    ? "border-[#6556F2] ring-2 ring-[#6556F2]/30"
+                    : "border-slate-200 hover:border-slate-300"
+                }`}
+              >
+                <input
+                  type="radio"
+                  name="estiloLogo"
+                  value={value}
+                  checked={form.estiloLogo === value}
+                  onChange={handleChange}
+                  className="sr-only"
+                />
+                <div className="min-h-[140px] bg-slate-100 flex items-center justify-center p-2">
+                  <img
+                    src={src}
+                    alt={label}
+                    className="w-full h-full object-contain max-h-[200px]"
+                  />
+                </div>
+                <span className="py-2 text-center text-sm font-medium text-slate-700 bg-white border-t border-slate-100">
+                  {label}
+                </span>
+              </label>
+            ))}
           </div>
         </div>
       </section>
+      )}
 
+      {step === 4 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 4 — Referencias
@@ -571,7 +712,9 @@ export default function Form() {
           placeholder="Pega aquí enlaces de Instagram, Pinterest, sitios web, etc."
         />
       </section>
+      )}
 
+      {step === 5 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 5 — Información para recetas médicas
@@ -579,14 +722,15 @@ export default function Form() {
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass} htmlFor="recetaNombre">
-              Nombre que debe aparecer
+              Nombre que debe aparecer *
             </label>
             <input
               id="recetaNombre"
               name="recetaNombre"
-              className={inputClass}
+              className={inputClassWithInvalid("recetaNombre")}
               value={form.recetaNombre}
               onChange={handleChange}
+              required
             />
           </div>
           <div>
@@ -627,69 +771,53 @@ export default function Form() {
           </div>
           <div>
             <label className={labelClass} htmlFor="recetaTelefono">
-              Teléfono
+              Teléfono *
             </label>
             <input
               id="recetaTelefono"
               name="recetaTelefono"
-              className={inputClass}
+              className={inputClassWithInvalid("recetaTelefono")}
               value={form.recetaTelefono}
               onChange={handleChange}
+              required
             />
           </div>
           <div>
             <label className={labelClass} htmlFor="recetaDireccion">
-              Dirección
+              Dirección *
             </label>
             <input
               id="recetaDireccion"
               name="recetaDireccion"
-              className={inputClass}
+              className={inputClassWithInvalid("recetaDireccion")}
               value={form.recetaDireccion}
               onChange={handleChange}
+              required
             />
           </div>
-        </div>
-
-        <div className="mt-4">
-          <p className="text-sm font-medium text-slate-700 mb-2">
-            ¿Deseas incluir QR en la receta?
-          </p>
-          <div className="grid md:grid-cols-3 gap-2 text-sm">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="recetaQRWhatsapp"
-                checked={form.recetaQRWhatsapp}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>WhatsApp</span>
+          <div>
+            <label className={labelClass} htmlFor="tamanoReceta">
+              Tamaño de receta *
             </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="recetaQRGoogleMaps"
-                checked={form.recetaQRGoogleMaps}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>Google Maps</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="recetaQRAgenda"
-                checked={form.recetaQRAgenda}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-              />
-              <span>Agenda / citas</span>
-            </label>
+            <select
+              id="tamanoReceta"
+              name="tamanoReceta"
+              className={inputClassWithInvalid("tamanoReceta")}
+              value={form.tamanoReceta}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Selecciona una opción</option>
+              <option value="media_carta">Media carta</option>
+              <option value="carta">Carta</option>
+              <option value="a5">A5</option>
+            </select>
           </div>
         </div>
       </section>
+      )}
 
+      {step === 6 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 6 — Tarjeta personal
@@ -697,27 +825,46 @@ export default function Form() {
         <div className="grid md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass} htmlFor="tarjetaNombre">
-              Nombre que debe aparecer
+              Nombre que debe aparecer *
             </label>
             <input
               id="tarjetaNombre"
               name="tarjetaNombre"
-              className={inputClass}
+              className={inputClassWithInvalid("tarjetaNombre")}
               value={form.tarjetaNombre}
               onChange={handleChange}
+              required
             />
           </div>
           <div>
             <label className={labelClass} htmlFor="tarjetaTituloProfesional">
-              Título profesional
+              Título profesional *
             </label>
             <input
               id="tarjetaTituloProfesional"
               name="tarjetaTituloProfesional"
-              className={inputClass}
+              className={inputClassWithInvalid("tarjetaTituloProfesional")}
               value={form.tarjetaTituloProfesional}
               onChange={handleChange}
+              required
             />
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="orientacionTarjeta">
+              Orientación de la tarjeta *
+            </label>
+            <select
+              id="orientacionTarjeta"
+              name="orientacionTarjeta"
+              className={inputClassWithInvalid("orientacionTarjeta")}
+              value={form.orientacionTarjeta}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Selecciona una opción</option>
+              <option value="horizontal">Horizontal</option>
+              <option value="vertical">Vertical</option>
+            </select>
           </div>
         </div>
         <div className="mt-4">
@@ -743,7 +890,7 @@ export default function Form() {
                 name="tarjetaTel"
                 checked={form.tarjetaTel}
                 onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Teléfono</span>
             </label>
@@ -753,7 +900,7 @@ export default function Form() {
                 name="tarjetaWhatsapp"
                 checked={form.tarjetaWhatsapp}
                 onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>WhatsApp</span>
             </label>
@@ -763,7 +910,7 @@ export default function Form() {
                 name="tarjetaEmail"
                 checked={form.tarjetaEmail}
                 onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Email</span>
             </label>
@@ -773,7 +920,7 @@ export default function Form() {
                 name="tarjetaDireccion"
                 checked={form.tarjetaDireccion}
                 onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Dirección</span>
             </label>
@@ -783,7 +930,7 @@ export default function Form() {
                 name="tarjetaRedes"
                 checked={form.tarjetaRedes}
                 onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>Redes sociales</span>
             </label>
@@ -793,54 +940,21 @@ export default function Form() {
                 name="tarjetaQR"
                 checked={form.tarjetaQR}
                 onChange={handleChange}
-                className="rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
               />
               <span>QR</span>
             </label>
           </div>
         </div>
       </section>
+      )}
 
+      {step === 7 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
           Sección 7 — Detalles de diseño
         </h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="orientacionTarjeta">
-              Orientación de la tarjeta
-            </label>
-            <select
-              id="orientacionTarjeta"
-              name="orientacionTarjeta"
-              className={inputClass}
-              value={form.orientacionTarjeta}
-              onChange={handleChange}
-            >
-              <option value="">Selecciona una opción</option>
-              <option value="horizontal">Horizontal</option>
-              <option value="vertical">Vertical</option>
-            </select>
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="tamanoReceta">
-              Tamaño de receta
-            </label>
-            <select
-              id="tamanoReceta"
-              name="tamanoReceta"
-              className={inputClass}
-              value={form.tamanoReceta}
-              onChange={handleChange}
-            >
-              <option value="">Selecciona una opción</option>
-              <option value="media_carta">Media carta</option>
-              <option value="carta">Carta</option>
-              <option value="a5">A5</option>
-            </select>
-          </div>
-        </div>
-        <div className="mt-4">
+        <div>
           <label className={labelClass} htmlFor="comentariosAdicionales">
             Comentarios adicionales
           </label>
@@ -854,19 +968,50 @@ export default function Form() {
           />
         </div>
       </section>
+      )}
 
-      <div className="pt-2 flex flex-col items-stretch md:items-end gap-3">
-        <p className="text-xs text-slate-500 max-w-md">
-          Al enviar este formulario tus respuestas se guardarán de forma segura
-          y serás redirigido al pago en Stripe para completar tu solicitud.
-        </p>
-        <button
-          type="submit"
-          disabled={loading}
-          className="inline-flex items-center justify-center rounded-full bg-sky-600 px-8 py-3 text-sm md:text-base font-semibold text-white shadow-md hover:bg-sky-700 disabled:opacity-60 disabled:cursor-not-allowed transition-colors w-full md:w-auto"
-        >
-          {loading ? "Enviando..." : "Enviar y continuar al pago"}
-        </button>
+      <div className="pt-2 flex flex-col items-stretch md:items-center gap-3 md:flex-row md:justify-between">
+        {isLastStep && (
+          <p className="text-xs text-slate-500 max-w-md">
+            Al enviar este formulario tus respuestas se guardarán de forma segura
+            y serás redirigido al pago en Stripe para completar tu solicitud.
+          </p>
+        )}
+        <div className="flex w-full justify-end gap-3">
+          {step > 1 && (
+            <button
+              type="button"
+              onClick={handlePrev}
+              className="inline-flex items-center justify-center rounded-full border border-slate-300 px-5 py-2.5 text-sm font-medium text-slate-700 hover:bg-slate-50 transition-colors"
+            >
+              Atrás
+            </button>
+          )}
+          {!isLastStep && (
+            <button
+              type="button"
+              onClick={handleNext}
+              className="inline-flex items-center justify-center rounded-full px-6 py-2.5 text-sm md:text-base font-semibold text-white shadow-md hover:opacity-90 transition-opacity w-full md:w-auto"
+              style={{ backgroundColor: BRAND }}
+            >
+              Siguiente
+            </button>
+          )}
+          {isLastStep && (
+            <button
+              type="submit"
+              disabled={loading || redirecting}
+              className="inline-flex items-center justify-center rounded-full px-8 py-3 text-sm md:text-base font-semibold text-white shadow-md hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity w-full md:w-auto"
+              style={{ backgroundColor: BRAND }}
+            >
+              {redirecting
+                ? "Redireccionando"
+                : loading
+                ? "Enviando..."
+                : "Completar y continuar al pago"}
+            </button>
+          )}
+        </div>
       </div>
     </form>
   );
