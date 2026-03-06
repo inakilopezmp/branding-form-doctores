@@ -52,6 +52,9 @@ type FormState = {
   orientacionTarjeta: Orientation;
   tamanoReceta: TamanoReceta;
   comentariosAdicionales: string;
+  logoImagenes: { fileName: string; note: string }[];
+  recetaImagenes: { fileName: string; note: string }[];
+  tarjetaImagenes: { fileName: string; note: string }[];
 };
 
 const BRAND = "#6556F2";
@@ -99,7 +102,10 @@ const initialState: FormState = {
   tarjetaQR: false,
   orientacionTarjeta: "",
   tamanoReceta: "",
-  comentariosAdicionales: ""
+  comentariosAdicionales: "",
+  logoImagenes: [],
+  recetaImagenes: [],
+  tarjetaImagenes: []
 };
 
 export default function Form() {
@@ -125,6 +131,69 @@ export default function Form() {
       [name]: type === "checkbox" ? checked : value
     }));
     setInvalidFields((prev) => prev.filter((f) => f !== name));
+  };
+
+  const handleLogoFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setForm((prev) => ({
+      ...prev,
+      logoImagenes: files.map((f) => {
+        const existing = prev.logoImagenes.find((r) => r.fileName === f.name);
+        return { fileName: f.name, note: existing?.note ?? "" };
+      })
+    }));
+  };
+
+  const handleLogoNoteChange = (index: number, note: string) => {
+    setForm((prev) => {
+      const arr = [...prev.logoImagenes];
+      if (!arr[index]) return prev;
+      arr[index] = { ...arr[index], note };
+      return { ...prev, logoImagenes: arr };
+    });
+  };
+
+  const handleRecetaFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setForm((prev) => ({
+      ...prev,
+      recetaImagenes: files.map((f) => {
+        const existing = prev.recetaImagenes.find((r) => r.fileName === f.name);
+        return { fileName: f.name, note: existing?.note ?? "" };
+      })
+    }));
+  };
+
+  const handleRecetaNoteChange = (index: number, note: string) => {
+    setForm((prev) => {
+      const arr = [...prev.recetaImagenes];
+      if (!arr[index]) return prev;
+      arr[index] = { ...arr[index], note };
+      return { ...prev, recetaImagenes: arr };
+    });
+  };
+
+  const handleTarjetaFiles = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files ?? []);
+    if (!files.length) return;
+    setForm((prev) => ({
+      ...prev,
+      tarjetaImagenes: files.map((f) => {
+        const existing = prev.tarjetaImagenes.find((r) => r.fileName === f.name);
+        return { fileName: f.name, note: existing?.note ?? "" };
+      })
+    }));
+  };
+
+  const handleTarjetaNoteChange = (index: number, note: string) => {
+    setForm((prev) => {
+      const arr = [...prev.tarjetaImagenes];
+      if (!arr[index]) return prev;
+      arr[index] = { ...arr[index], note };
+      return { ...prev, tarjetaImagenes: arr };
+    });
   };
 
   type StepValidation = { message: string | null; fields: string[] };
@@ -154,15 +223,36 @@ export default function Form() {
         };
       return { message: null, fields: [] };
     }
+    if (s === 3) {
+      const fields: string[] = [];
+      form.logoImagenes.forEach((img, idx) => {
+        if (img.fileName && !img.note.trim()) {
+          fields.push(`logoImagenes_${idx}`);
+        }
+      });
+      if (fields.length)
+        return {
+          message:
+            "Por favor cuéntanos qué quieres que tomemos de cada imagen de referencia del logo.",
+          fields
+        };
+      return { message: null, fields: [] };
+    }
     if (s === 5) {
       const fields: string[] = [];
       if (!form.recetaNombre.trim()) fields.push("recetaNombre");
       if (!form.recetaTelefono.trim()) fields.push("recetaTelefono");
       if (!form.recetaDireccion.trim()) fields.push("recetaDireccion");
       if (!form.tamanoReceta) fields.push("tamanoReceta");
+      form.recetaImagenes.forEach((img, idx) => {
+        if (img.fileName && !img.note.trim()) {
+          fields.push(`recetaImagenes_${idx}`);
+        }
+      });
       if (fields.length)
         return {
-          message: "Por favor completa los campos obligatorios marcados.",
+          message:
+            "Por favor completa los campos obligatorios marcados y las notas de las imágenes de referencia de receta.",
           fields
         };
       return { message: null, fields: [] };
@@ -172,9 +262,15 @@ export default function Form() {
       if (!form.tarjetaNombre.trim()) fields.push("tarjetaNombre");
       if (!form.tarjetaTituloProfesional.trim()) fields.push("tarjetaTituloProfesional");
       if (!form.orientacionTarjeta) fields.push("orientacionTarjeta");
+      form.tarjetaImagenes.forEach((img, idx) => {
+        if (img.fileName && !img.note.trim()) {
+          fields.push(`tarjetaImagenes_${idx}`);
+        }
+      });
       if (fields.length)
         return {
-          message: "Por favor completa los campos obligatorios marcados.",
+          message:
+            "Por favor completa los campos obligatorios marcados y las notas de las imágenes de referencia de tarjeta.",
           fields
         };
       return { message: null, fields: [] };
@@ -421,9 +517,13 @@ export default function Form() {
             <input
               id="telefono"
               name="telefono"
+              type="tel"
               className={inputClassWithInvalid("telefono")}
               value={form.telefono}
               onChange={handleChange}
+              placeholder="+52 55 1234 5678"
+              pattern="^\\+[0-9\\s\\-()]{7,20}$"
+              title="Incluye el código de país, por ejemplo: +52 55 1234 5678"
               required
             />
           </div>
@@ -434,9 +534,13 @@ export default function Form() {
             <input
               id="whatsapp"
               name="whatsapp"
+              type="tel"
               className={inputClassWithInvalid("whatsapp")}
               value={form.whatsapp}
               onChange={handleChange}
+              placeholder="+52 1 55 1234 5678"
+              pattern="^\\+[0-9\\s\\-()]{7,20}$"
+              title="Incluye el código de país, por ejemplo: +52 1 55 1234 5678"
               required
             />
           </div>
@@ -692,6 +796,46 @@ export default function Form() {
             ))}
           </div>
         </div>
+
+        <div className="mt-6 space-y-3">
+          <label className={labelClass} htmlFor="logoImagenes">
+            Imágenes de referencia para el logo
+          </label>
+          <input
+            id="logoImagenes"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleLogoFiles}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+          />
+          {form.logoImagenes.length > 0 && (
+            <div className="space-y-3">
+              {form.logoImagenes.map((img, idx) => (
+                <div
+                  key={img.fileName + idx}
+                  className="border border-slate-200 rounded-lg p-3 space-y-2"
+                >
+                  <p className="text-xs font-medium text-slate-600 break-all">
+                    {img.fileName}
+                  </p>
+                  <label className="text-xs text-slate-600">
+                    ¿Qué quieres que tomemos de esta referencia?
+                  </label>
+                  <textarea
+                    className={textareaClassWithInvalid(
+                      `logoImagenes_${idx}`
+                    )}
+                    value={img.note}
+                    onChange={(e) =>
+                      handleLogoNoteChange(idx, e.target.value)
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </section>
       )}
 
@@ -776,9 +920,13 @@ export default function Form() {
             <input
               id="recetaTelefono"
               name="recetaTelefono"
+              type="tel"
               className={inputClassWithInvalid("recetaTelefono")}
               value={form.recetaTelefono}
               onChange={handleChange}
+              placeholder="+52 55 1234 5678"
+              pattern="^\\+[0-9\\s\\-()]{7,20}$"
+              title="Incluye el código de país, por ejemplo: +52 55 1234 5678"
               required
             />
           </div>
@@ -813,6 +961,46 @@ export default function Form() {
               <option value="a5">A5</option>
             </select>
           </div>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          <label className={labelClass} htmlFor="recetaImagenes">
+            Imágenes de referencia para la receta
+          </label>
+          <input
+            id="recetaImagenes"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleRecetaFiles}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+          />
+          {form.recetaImagenes.length > 0 && (
+            <div className="space-y-3">
+              {form.recetaImagenes.map((img, idx) => (
+                <div
+                  key={img.fileName + idx}
+                  className="border border-slate-200 rounded-lg p-3 space-y-2"
+                >
+                  <p className="text-xs font-medium text-slate-600 break-all">
+                    {img.fileName}
+                  </p>
+                  <label className="text-xs text-slate-600">
+                    ¿Qué quieres que tomemos de esta referencia?
+                  </label>
+                  <textarea
+                    className={textareaClassWithInvalid(
+                      `recetaImagenes_${idx}`
+                    )}
+                    value={img.note}
+                    onChange={(e) =>
+                      handleRecetaNoteChange(idx, e.target.value)
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
       )}
@@ -945,6 +1133,46 @@ export default function Form() {
               <span>QR</span>
             </label>
           </div>
+        </div>
+
+        <div className="mt-6 space-y-3">
+          <label className={labelClass} htmlFor="tarjetaImagenes">
+            Imágenes de referencia para la tarjeta
+          </label>
+          <input
+            id="tarjetaImagenes"
+            type="file"
+            accept="image/*"
+            multiple
+            onChange={handleTarjetaFiles}
+            className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
+          />
+          {form.tarjetaImagenes.length > 0 && (
+            <div className="space-y-3">
+              {form.tarjetaImagenes.map((img, idx) => (
+                <div
+                  key={img.fileName + idx}
+                  className="border border-slate-200 rounded-lg p-3 space-y-2"
+                >
+                  <p className="text-xs font-medium text-slate-600 break-all">
+                    {img.fileName}
+                  </p>
+                  <label className="text-xs text-slate-600">
+                    ¿Qué quieres que tomemos de esta referencia?
+                  </label>
+                  <textarea
+                    className={textareaClassWithInvalid(
+                      `tarjetaImagenes_${idx}`
+                    )}
+                    value={img.note}
+                    onChange={(e) =>
+                      handleTarjetaNoteChange(idx, e.target.value)
+                    }
+                  />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
       </section>
       )}

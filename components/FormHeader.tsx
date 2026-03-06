@@ -22,7 +22,11 @@ export default function FormHeader() {
       <div>
         {firstName ? (
           <p className="text-lg md:text-xl text-slate-700 mb-1">
-            Hola {firstName} 👋🏻, este es tu formulario de branding
+            Hola {firstName}{" "}
+            <span className="wave-hand" aria-hidden="true">
+              👋🏻
+            </span>
+            , este es tu formulario de branding
           </p>
         ) : null}
         <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
