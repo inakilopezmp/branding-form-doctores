@@ -19,3 +19,69 @@ body {
   transform-origin: 70% 70%;
   animation: wave-hand 1.5s ease-in-out 1;
 }
+
+/* Logo loading animation (Lottie-style) */
+.logo-loading-animation {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-loading-animation svg {
+  overflow: visible;
+}
+
+.logo-loading-circle-1,
+.logo-loading-circle-2,
+.logo-loading-circle-3 {
+  fill: currentColor;
+  opacity: 0.4;
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: logo-loading-pulse 2s ease-in-out infinite;
+}
+
+.logo-loading-circle-2 {
+  animation-delay: 0.25s;
+}
+
+.logo-loading-circle-3 {
+  animation-delay: 0.5s;
+}
+
+@keyframes logo-loading-pulse {
+  0%, 100% {
+    opacity: 0.4;
+    transform: scale(0.9);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.15);
+  }
+}
+
+.logo-loading-path {
+  fill: none;
+  stroke-dasharray: 60;
+  stroke-dashoffset: 60;
+  animation: logo-loading-draw 2.2s ease-in-out infinite;
+}
+
+.logo-loading-path-delay {
+  animation-delay: 0.6s;
+}
+
+@keyframes logo-loading-draw {
+  0% {
+    stroke-dashoffset: 60;
+  }
+  45% {
+    stroke-dashoffset: 0;
+  }
+  55% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -60;
+  }
+}

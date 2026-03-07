@@ -1,15 +1,15 @@
 "use client";
 
-import { FormEvent, useState } from "react";
-
-const STRIPE_URL =
-  "https://buy.stripe.com/8x27sD3Ti5jrfNigKv8ww0M";
+import { useRouter, useSearchParams } from "next/navigation";
+import { FormEvent, useEffect, useMemo, useState } from "react";
+import { STRIPE_URL } from "../lib/constants";
 
 type Orientation = "horizontal" | "vertical" | "";
 type TamanoReceta = "media_carta" | "carta" | "a5" | "";
 
 type FormState = {
   nombreCompleto: string;
+  tituloAbreviado: "Dr." | "Dra." | "";
   especialidad: string;
   subespecialidad: string;
   cedulaProfesional: string;
@@ -37,6 +37,8 @@ type FormState = {
   recetaCedulaEspecialidad: string;
   recetaTelefono: string;
   recetaDireccion: string;
+  recetaMarcaDeAgua: boolean;
+  recetaCamposPersonalizados: string;
   recetaQRWhatsapp: boolean;
   recetaQRGoogleMaps: boolean;
   recetaQRAgenda: boolean;
@@ -61,6 +63,7 @@ const BRAND = "#6556F2";
 
 const initialState: FormState = {
   nombreCompleto: "",
+  tituloAbreviado: "",
   especialidad: "",
   subespecialidad: "",
   cedulaProfesional: "",
@@ -88,6 +91,8 @@ const initialState: FormState = {
   recetaCedulaEspecialidad: "",
   recetaTelefono: "",
   recetaDireccion: "",
+  recetaMarcaDeAgua: true,
+  recetaCamposPersonalizados: "",
   recetaQRWhatsapp: false,
   recetaQRGoogleMaps: false,
   recetaQRAgenda: false,
@@ -101,24 +106,70 @@ const initialState: FormState = {
   tarjetaRedes: false,
   tarjetaQR: false,
   orientacionTarjeta: "",
-  tamanoReceta: "",
+  tamanoReceta: "a5",
   comentariosAdicionales: "",
   logoImagenes: [],
   recetaImagenes: [],
   tarjetaImagenes: []
 };
 
-export default function Form() {
+type FormProps = {
+  onStepChange?: (step: number) => void;
+};
+
+const DRAFT_STORAGE_KEY = "branding_form_draft";
+
+export default function Form({ onStepChange }: FormProps) {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const firstName = useMemo(
+    () => searchParams.get("first_name")?.trim() || "",
+    [searchParams]
+  );
   const [form, setForm] = useState<FormState>(initialState);
   const [loading, setLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [infoMsg, setInfoMsg] = useState<string | null>(null);
   const [redirecting, setRedirecting] = useState(false);
-  const [step, setStep] = useState(1);
+  const [step, setStep] = useState(0);
   const [invalidFields, setInvalidFields] = useState<string[]>([]);
+  const [hydrated, setHydrated] = useState(false);
 
   const TOTAL_STEPS = 7;
   const isLastStep = step === TOTAL_STEPS;
+  const isFormStep = step >= 1;
+
+  useEffect(() => {
+    onStepChange?.(step);
+  }, [step, onStepChange]);
+
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
+      if (raw) {
+        const data = JSON.parse(raw) as { form?: Partial<FormState>; step?: number };
+        if (data.form && typeof data.step === "number" && data.step >= 0 && data.step <= TOTAL_STEPS) {
+          setForm((prev) => ({ ...prev, ...data.form }));
+          setStep(data.step);
+        }
+      }
+    } catch {
+      // ignore invalid draft
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      localStorage.setItem(
+        DRAFT_STORAGE_KEY,
+        JSON.stringify({ form, step })
+      );
+    } catch {
+      // ignore
+    }
+  }, [form, step, hydrated]);
 
   const handleChange = (
     e: React.ChangeEvent<
@@ -240,10 +291,8 @@ export default function Form() {
     }
     if (s === 5) {
       const fields: string[] = [];
-      if (!form.recetaNombre.trim()) fields.push("recetaNombre");
       if (!form.recetaTelefono.trim()) fields.push("recetaTelefono");
       if (!form.recetaDireccion.trim()) fields.push("recetaDireccion");
-      if (!form.tamanoReceta) fields.push("tamanoReceta");
       form.recetaImagenes.forEach((img, idx) => {
         if (img.fileName && !img.note.trim()) {
           fields.push(`recetaImagenes_${idx}`);
@@ -259,9 +308,7 @@ export default function Form() {
     }
     if (s === 6) {
       const fields: string[] = [];
-      if (!form.tarjetaNombre.trim()) fields.push("tarjetaNombre");
       if (!form.tarjetaTituloProfesional.trim()) fields.push("tarjetaTituloProfesional");
-      if (!form.orientacionTarjeta) fields.push("orientacionTarjeta");
       form.tarjetaImagenes.forEach((img, idx) => {
         if (img.fileName && !img.note.trim()) {
           fields.push(`tarjetaImagenes_${idx}`);
@@ -315,13 +362,23 @@ export default function Form() {
       if (!res.ok || !data?.success) {
         throw new Error(data?.error || "Error al enviar el formulario");
       }
-
-      setInfoMsg("¡Gracias! Redirigiendo al pago de Stripe...");
+      const formId = data?.id ?? data?.ID;
+      if (formId) {
+        fetch("/api/generate-logos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ formId, form }),
+          keepalive: true
+        }).catch(() => {});
+      }
+      setInfoMsg("Guardado. Redirigiendo...");
       setLoading(false);
       setRedirecting(true);
-      setTimeout(() => {
-        window.location.href = STRIPE_URL;
-      }, 1500);
+      const nombreParaConfirmar =
+        form.nombreCompleto.trim().split(/\s+/)[0] || firstName || "Doctor";
+      const params = new URLSearchParams({ nombre: nombreParaConfirmar });
+      if (formId) params.set("formId", String(formId));
+      router.push("/confirmar?" + params.toString());
     } catch (err) {
       console.error(err);
       setErrorMsg(
@@ -329,9 +386,56 @@ export default function Form() {
       );
       setInfoMsg(null);
     } finally {
-      if (!redirecting) {
-        setLoading(false);
+      if (!redirecting) setLoading(false);
+    }
+  };
+
+  const handleContinue = async () => {
+    setErrorMsg(null);
+    setInfoMsg(null);
+    setRedirecting(false);
+    const validationError = validate();
+    if (validationError) {
+      setErrorMsg(validationError);
+      return;
+    }
+    try {
+      setLoading(true);
+      setInfoMsg("Guardando tu información...");
+      const res = await fetch("/api/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json().catch(() => null);
+      if (!res.ok || !data?.success) {
+        throw new Error(data?.error || "Error al enviar el formulario");
       }
+      const formId = data?.id ?? data?.ID;
+      if (formId) {
+        fetch("/api/generate-logos", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ formId, form }),
+          keepalive: true
+        }).catch(() => {});
+      }
+      setInfoMsg("Listo. Redirigiendo...");
+      setLoading(false);
+      setRedirecting(true);
+      const nombreParaConfirmar =
+        form.nombreCompleto.trim().split(/\s+/)[0] || firstName || "Doctor";
+      const params = new URLSearchParams({ nombre: nombreParaConfirmar });
+      if (formId) params.set("formId", String(formId));
+      router.push("/confirmar?" + params.toString());
+    } catch (err) {
+      console.error(err);
+      setErrorMsg(
+        "Ocurrió un error al guardar. Intenta de nuevo en unos momentos."
+      );
+      setInfoMsg(null);
+    } finally {
+      if (!redirecting) setLoading(false);
     }
   };
 
@@ -361,7 +465,7 @@ export default function Form() {
 
   const handlePrev = () => {
     setInvalidFields([]);
-    if (step > 1) {
+    if (step > 0) {
       setStep((prev) => prev - 1);
       window.scrollTo({ top: 0, behavior: "smooth" });
     }
@@ -384,7 +488,59 @@ export default function Form() {
     return `${base} ${border}`;
   };
 
-  const progress = (step / TOTAL_STEPS) * 100;
+  const progress = isFormStep ? (step / TOTAL_STEPS) * 100 : 0;
+
+  if (step === 0) {
+    return (
+      <div className="space-y-8 max-w-xl mx-auto">
+        <div className="text-center space-y-3">
+          <h2 className="text-2xl md:text-3xl font-semibold text-slate-900">
+            Hola{firstName ? ` ${firstName}` : ""}{" "}
+            <span className="wave-hand" aria-hidden="true">👋🏻</span>, este es tu formulario de branding.
+          </h2>
+          <p className="text-slate-600 text-base md:text-lg">
+            Con esta información, diseñaremos tu logo médico, tarjeta profesional y recetas médicas listas para imprimir.
+          </p>
+        </div>
+        <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 space-y-4">
+          <h3 className="text-base font-semibold text-slate-900">Qué incluye</h3>
+          <ul className="space-y-2 text-slate-700">
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-600" aria-hidden>✔</span>
+              Logo profesional
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-600" aria-hidden>✔</span>
+              Tarjeta personal
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-600" aria-hidden>✔</span>
+              Recetas médicas
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-600" aria-hidden>✔</span>
+              Archivos editables
+            </li>
+            <li className="flex items-center gap-2">
+              <span className="text-emerald-600" aria-hidden>✔</span>
+              Entrega en 3-5 días
+            </li>
+          </ul>
+        </div>
+        <div className="flex flex-col sm:flex-row items-center justify-center gap-3">
+          <button
+            type="button"
+            onClick={() => { setStep(1); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+            className="inline-flex items-center justify-center rounded-full px-8 py-3 text-base font-semibold text-white shadow-md hover:opacity-90 transition-opacity"
+            style={{ backgroundColor: BRAND }}
+          >
+            Comenzar diseño
+          </button>
+          <span className="text-sm text-slate-500">Aprox. 3 minutos</span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <form onSubmit={handleSubmit} className="space-y-6">
@@ -436,6 +592,23 @@ export default function Form() {
               onChange={handleChange}
               required
             />
+          </div>
+          <div>
+            <label className={labelClass} htmlFor="tituloAbreviado">
+              Título profesional abreviado *
+            </label>
+            <select
+              id="tituloAbreviado"
+              name="tituloAbreviado"
+              className={inputClassWithInvalid("tituloAbreviado")}
+              value={form.tituloAbreviado}
+              onChange={handleChange}
+              required
+            >
+              <option value="">Selecciona</option>
+              <option value="Dr.">Dr.</option>
+              <option value="Dra.">Dra.</option>
+            </select>
           </div>
           <div>
             <label className={labelClass} htmlFor="especialidad">
@@ -865,19 +1038,6 @@ export default function Form() {
         </h2>
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass} htmlFor="recetaNombre">
-              Nombre que debe aparecer *
-            </label>
-            <input
-              id="recetaNombre"
-              name="recetaNombre"
-              className={inputClassWithInvalid("recetaNombre")}
-              value={form.recetaNombre}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          <div>
             <label className={labelClass} htmlFor="recetaEspecialidad">
               Especialidad
             </label>
@@ -943,24 +1103,36 @@ export default function Form() {
               required
             />
           </div>
-          <div>
-            <label className={labelClass} htmlFor="tamanoReceta">
-              Tamaño de receta *
+          <div className="md:col-span-2">
+            <label className={labelClass} htmlFor="recetaMarcaDeAgua">
+              Con marca de agua
             </label>
             <select
-              id="tamanoReceta"
-              name="tamanoReceta"
-              className={inputClassWithInvalid("tamanoReceta")}
-              value={form.tamanoReceta}
-              onChange={handleChange}
-              required
+              id="recetaMarcaDeAgua"
+              name="recetaMarcaDeAgua"
+              className={inputClass}
+              value={form.recetaMarcaDeAgua ? "si" : "no"}
+              onChange={(e) => setForm((prev) => ({ ...prev, recetaMarcaDeAgua: e.target.value === "si" }))}
             >
-              <option value="">Selecciona una opción</option>
-              <option value="media_carta">Media carta</option>
-              <option value="carta">Carta</option>
-              <option value="a5">A5</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
             </select>
           </div>
+        </div>
+
+        <div className="mt-4">
+          <label className={labelClass} htmlFor="recetaCamposPersonalizados">
+            ¿Qué campos a completar quieres que aparezcan en la receta?
+          </label>
+          <textarea
+            id="recetaCamposPersonalizados"
+            name="recetaCamposPersonalizados"
+            className={textareaClass}
+            value={form.recetaCamposPersonalizados}
+            onChange={handleChange}
+            placeholder="Ejemplo: Edad, Peso, IMC, Alergias, Diagnóstico, Tratamiento, etc."
+            rows={3}
+          />
         </div>
 
         <div className="mt-6 space-y-3">
@@ -1012,19 +1184,6 @@ export default function Form() {
         </h2>
         <div className="grid md:grid-cols-2 gap-4">
           <div>
-            <label className={labelClass} htmlFor="tarjetaNombre">
-              Nombre que debe aparecer *
-            </label>
-            <input
-              id="tarjetaNombre"
-              name="tarjetaNombre"
-              className={inputClassWithInvalid("tarjetaNombre")}
-              value={form.tarjetaNombre}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          <div>
             <label className={labelClass} htmlFor="tarjetaTituloProfesional">
               Título profesional *
             </label>
@@ -1036,23 +1195,6 @@ export default function Form() {
               onChange={handleChange}
               required
             />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="orientacionTarjeta">
-              Orientación de la tarjeta *
-            </label>
-            <select
-              id="orientacionTarjeta"
-              name="orientacionTarjeta"
-              className={inputClassWithInvalid("orientacionTarjeta")}
-              value={form.orientacionTarjeta}
-              onChange={handleChange}
-              required
-            >
-              <option value="">Selecciona una opción</option>
-              <option value="horizontal">Horizontal</option>
-              <option value="vertical">Vertical</option>
-            </select>
           </div>
         </div>
         <div className="mt-4">
@@ -1200,13 +1342,19 @@ export default function Form() {
 
       <div className="pt-2 flex flex-col items-stretch md:items-center gap-3 md:flex-row md:justify-between">
         {isLastStep && (
-          <p className="text-xs text-slate-500 max-w-md">
-            Al enviar este formulario tus respuestas se guardarán de forma segura
-            y serás redirigido al pago en Stripe para completar tu solicitud.
-          </p>
+          <div className="text-xs text-slate-500 max-w-md space-y-2">
+            <p>
+              Al continuar, tus respuestas se guardarán y podrás confirmar el pago
+              en el siguiente paso.
+            </p>
+            <p>
+              Este servicio incluye el diseño del logo, las tarjetas de presentación
+              y las recetas médicas. Nosotros no nos encargamos de la impresión.
+            </p>
+          </div>
         )}
         <div className="flex w-full justify-end gap-3">
-          {step > 1 && (
+          {step > 0 && (
             <button
               type="button"
               onClick={handlePrev}
@@ -1227,16 +1375,13 @@ export default function Form() {
           )}
           {isLastStep && (
             <button
-              type="submit"
+              type="button"
+              onClick={handleContinue}
               disabled={loading || redirecting}
               className="inline-flex items-center justify-center rounded-full px-8 py-3 text-sm md:text-base font-semibold text-white shadow-md hover:opacity-90 disabled:opacity-60 disabled:cursor-not-allowed transition-opacity w-full md:w-auto"
               style={{ backgroundColor: BRAND }}
             >
-              {redirecting
-                ? "Redireccionando"
-                : loading
-                ? "Enviando..."
-                : "Completar y continuar al pago"}
+              {redirecting ? "Redirigiendo..." : loading ? "Guardando..." : "Continuar"}
             </button>
           )}
         </div>

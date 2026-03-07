@@ -27,7 +27,7 @@ export async function POST(req: Request) {
         apikey: apiKey,
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
-        Prefer: "return=minimal"
+        Prefer: "return=representation"
       },
       body: JSON.stringify(payload)
     });
@@ -46,7 +46,11 @@ export async function POST(req: Request) {
       );
     }
 
-    return NextResponse.json({ success: true });
+    const inserted = await resp.json().catch(() => null);
+    const row = Array.isArray(inserted) ? inserted[0] : inserted;
+    const id = row?.id ?? row?.ID ?? null;
+
+    return NextResponse.json({ success: true, id });
   } catch (err) {
     console.error("Error en /api/submit:", err);
     return NextResponse.json(

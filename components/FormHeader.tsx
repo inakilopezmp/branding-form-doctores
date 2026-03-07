@@ -1,15 +1,10 @@
 "use client";
 
-import { useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+type FormHeaderProps = {
+  showTitle?: boolean;
+};
 
-export default function FormHeader() {
-  const searchParams = useSearchParams();
-  const firstName = useMemo(
-    () => searchParams.get("first_name")?.trim() || "",
-    [searchParams]
-  );
-
+export default function FormHeader({ showTitle = true }: FormHeaderProps) {
   return (
     <header className="mb-8 text-center space-y-4">
       <div className="flex items-center justify-center">
@@ -19,24 +14,17 @@ export default function FormHeader() {
           className="h-10 w-auto"
         />
       </div>
-      <div>
-        {firstName ? (
-          <p className="text-lg md:text-xl text-slate-700 mb-1">
-            Hola {firstName}{" "}
-            <span className="wave-hand" aria-hidden="true">
-              👋🏻
-            </span>
-            , este es tu formulario de branding
+      {showTitle && (
+        <div>
+          <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
+            Formulario de Branding para Doctores
+          </h1>
+          <p className="mt-2 text-sm md:text-base text-slate-600">
+            Con esta información podremos diseñar tu logo médico, tarjeta profesional
+            y recetas médicas listas para imprimir.
           </p>
-        ) : null}
-        <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
-          Formulario de Branding para Doctores
-        </h1>
-        <p className="mt-2 text-sm md:text-base text-slate-600">
-          Con esta información podremos diseñar tu identidad visual y materiales
-          del consultorio
-        </p>
-      </div>
+        </div>
+      )}
     </header>
   );
 }
