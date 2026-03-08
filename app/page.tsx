@@ -1,9 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useState, Suspense } from "react";
 import Form from "../components/Form";
 import FormHeader from "../components/FormHeader";
-import { Suspense } from "react";
 
 export default function HomePage() {
   const [formStep, setFormStep] = useState(0);
@@ -13,7 +12,9 @@ export default function HomePage() {
         <Suspense fallback={null}>
           <FormHeader showTitle={formStep !== 0} />
         </Suspense>
-        <Form onStepChange={setFormStep} />
+        <Suspense fallback={<div className="py-8 text-center text-slate-500">Cargando formulario…</div>}>
+          <Form onStepChange={setFormStep} />
+        </Suspense>
       </div>
     </main>
   );

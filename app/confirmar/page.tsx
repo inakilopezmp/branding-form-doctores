@@ -1,7 +1,7 @@
 "use client";
 
 import { useSearchParams } from "next/navigation";
-import { useMemo, useEffect, useState, useRef } from "react";
+import { useMemo, useEffect, useState, useRef, Suspense } from "react";
 import { STRIPE_URL } from "../../lib/constants";
 import { parseAccentColor } from "../../lib/colors";
 import StyledQR from "../../components/StyledQR";
@@ -94,7 +94,7 @@ function whatsappLink(numero?: string): string {
   return "https://wa.me/" + conCodigo;
 }
 
-export default function ConfirmarPage() {
+function ConfirmarContent() {
   const searchParams = useSearchParams();
   const nombre = useMemo(
     () => decodeURIComponent(searchParams.get("nombre") || "").trim() || "Doctor",
@@ -578,5 +578,19 @@ export default function ConfirmarPage() {
         )}
       </div>
     </main>
+  );
+}
+
+export default function ConfirmarPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-100 flex items-center justify-center">
+          <p className="text-slate-600">Cargando…</p>
+        </div>
+      }
+    >
+      <ConfirmarContent />
+    </Suspense>
   );
 }
