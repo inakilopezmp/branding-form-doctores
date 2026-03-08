@@ -151,7 +151,8 @@ export async function POST(request: NextRequest) {
 
     await browser.close();
 
-    return new NextResponse(new Blob([pdfBuffer], { type: "application/pdf" }), {
+    const blob = new Blob([new Uint8Array(pdfBuffer)], { type: "application/pdf" });
+    return new NextResponse(blob, {
       status: 200,
       headers: {
         "Content-Type": "application/pdf",
