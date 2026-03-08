@@ -377,6 +377,7 @@ export default function Form({ onStepChange }: FormProps) {
       const nombreParaConfirmar =
         form.nombreCompleto.trim().split(/\s+/)[0] || firstName || "Doctor";
       const params = new URLSearchParams({ nombre: nombreParaConfirmar });
+      if (form.tituloAbreviado) params.set("titulo", form.tituloAbreviado);
       if (formId) params.set("formId", String(formId));
       router.push("/confirmar?" + params.toString());
     } catch (err) {
@@ -426,6 +427,7 @@ export default function Form({ onStepChange }: FormProps) {
       const nombreParaConfirmar =
         form.nombreCompleto.trim().split(/\s+/)[0] || firstName || "Doctor";
       const params = new URLSearchParams({ nombre: nombreParaConfirmar });
+      if (form.tituloAbreviado) params.set("titulo", form.tituloAbreviado);
       if (formId) params.set("formId", String(formId));
       router.push("/confirmar?" + params.toString());
     } catch (err) {
@@ -499,7 +501,7 @@ export default function Form({ onStepChange }: FormProps) {
             <span className="wave-hand" aria-hidden="true">👋🏻</span>, este es tu formulario de branding.
           </h2>
           <p className="text-slate-600 text-base md:text-lg">
-            Con esta información, diseñaremos tu logo médico, tarjeta profesional y recetas médicas listas para imprimir.
+            El primer paso para que tu práctica transmita confianza desde el primer contacto.
           </p>
         </div>
         <div className="rounded-xl border border-slate-200 bg-slate-50/50 p-6 space-y-4">
@@ -1037,18 +1039,6 @@ export default function Form({ onStepChange }: FormProps) {
           Sección 5 — Información para recetas médicas
         </h2>
         <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="recetaEspecialidad">
-              Especialidad
-            </label>
-            <input
-              id="recetaEspecialidad"
-              name="recetaEspecialidad"
-              className={inputClass}
-              value={form.recetaEspecialidad}
-              onChange={handleChange}
-            />
-          </div>
           <div>
             <label className={labelClass} htmlFor="recetaCedulaProfesional">
               Cédula profesional

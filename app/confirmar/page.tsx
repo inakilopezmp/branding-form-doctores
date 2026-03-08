@@ -100,6 +100,10 @@ function ConfirmarContent() {
     () => decodeURIComponent(searchParams.get("nombre") || "").trim() || "Doctor",
     [searchParams]
   );
+  const titulo = useMemo(
+    () => (searchParams.get("titulo") || "Dr.").trim() || "Dr.",
+    [searchParams]
+  );
   const formId = searchParams.get("formId");
   const [logoUrls, setLogoUrls] = useState<string[] | null>(null);
   const [logosLoading, setLogosLoading] = useState(!!formId);
@@ -113,6 +117,7 @@ function ConfirmarContent() {
   const [recetaVariacion, setRecetaVariacion] = useState<1 | 2>(1);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
+  const [loadingProgress, setLoadingProgress] = useState(0);
 
   const LOADING_MESSAGES = [
     "Recopilando tus respuestas",
@@ -139,6 +144,31 @@ function ConfirmarContent() {
       );
     }, 2200);
     return () => clearInterval(id);
+  }, [logosLoading]);
+
+  useEffect(() => {
+    if (!logosLoading) return;
+    const start = Date.now();
+    const totalMs = 90000;
+    const tick = () => {
+      const elapsed = Math.min(Date.now() - start, totalMs);
+      if (elapsed >= totalMs) {
+        setLoadingProgress(100);
+        return;
+      }
+      if (elapsed < 60000) {
+        setLoadingProgress((elapsed / 60000) * 80);
+      } else {
+        setLoadingProgress(80 + ((elapsed - 60000) / 30000) * 20);
+      }
+    };
+    tick();
+    const id = setInterval(tick, 500);
+    return () => clearInterval(id);
+  }, [logosLoading]);
+
+  useEffect(() => {
+    if (!logosLoading) setLoadingProgress(100);
   }, [logosLoading]);
 
   useEffect(() => {
@@ -185,7 +215,7 @@ function ConfirmarContent() {
         </div>
         <div className="space-y-3">
           <h1 className="text-2xl md:text-3xl font-semibold text-slate-900">
-            Perfecto Dr. {nombre}.
+            Perfecto {titulo} {nombre}.
           </h1>
           <p className="text-slate-600 text-base md:text-lg">
             Ya tenemos la información para diseñar su identidad médica.
@@ -195,24 +225,50 @@ function ConfirmarContent() {
           <div className="border-t border-slate-200 pt-6 space-y-3">
             {logosLoading && (
               <div className="flex flex-col items-center gap-6 py-4">
-                <div className="logo-loading-animation" aria-hidden>
-                  <svg viewBox="0 0 120 120" className="w-24 h-24 text-[#6556F2]" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-                    <circle className="logo-loading-circle-1" cx="60" cy="40" r="12" />
-                    <circle className="logo-loading-circle-2" cx="40" cy="75" r="10" />
-                    <circle className="logo-loading-circle-3" cx="85" cy="75" r="8" />
-                    <path className="logo-loading-path" d="M35 50 Q60 30 85 50" />
-                    <path className="logo-loading-path logo-loading-path-delay" d="M45 70 Q60 55 75 70" />
+                <p className="text-slate-700 font-medium text-center">
+                  No cierres esta página. Estamos generando tu identidad visual.
+                </p>
+                <p className="text-slate-500 text-sm">
+                  Esto tarda aproximadamente 90 segundos.
+                </p>
+                <div className="logo-loading-animation flex items-center justify-center w-28 h-20 text-[#6556F2]" aria-hidden>
+                  <svg viewBox="0 0 120 60" className="w-full h-full max-h-20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path
+                      className="logo-loading-heartbeat"
+                      d="M0 30 L20 30 L25 15 L30 45 L35 30 L55 30 L60 15 L65 45 L70 30 L90 30 L95 15 L100 45 L105 30 L120 30"
+                    />
                   </svg>
                 </div>
-                <p className="text-sm font-medium text-slate-600 min-h-[1.5rem] transition-opacity duration-500" key={loadingMessageIndex}>
-                  {LOADING_MESSAGES[loadingMessageIndex]}
+                <div className="w-full max-w-sm space-y-2">
+                  <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-[#6556F2] rounded-full transition-all duration-500 ease-out"
+                      style={{ width: `${Math.min(loadingProgress, 100)}%` }}
+                    />
+                  </div>
+                  <p className="text-sm font-medium text-slate-600 min-h-[1.5rem] transition-opacity duration-500" key={loadingMessageIndex}>
+                    {LOADING_MESSAGES[loadingMessageIndex]}
+                  </p>
+                </div>
+                <p className="text-slate-500 text-sm">
+                  Más de 120 médicos ya crearon su identidad visual con este sistema.
                 </p>
               </div>
             )}
             {logoUrls && logoUrls.length > 0 && (() => {
-              const hasIsotipo = logoUrls.length > 4;
-              const imagotipos = hasIsotipo ? logoUrls.slice(1) : logoUrls;
+              const isPairFormat = logoUrls.length >= 8 && logoUrls.length % 2 === 0;
+              const hasIsotipo = isPairFormat || logoUrls.length > 4;
+              const imagotipos = isPairFormat
+                ? Array.from({ length: logoUrls.length / 2 }, (_, i) => logoUrls[i * 2 + 1]!)
+                : hasIsotipo
+                  ? logoUrls.slice(1)
+                  : logoUrls;
               if (imagotipos.length === 0) return null;
+              const selectedImagotipoUrl = isPairFormat
+                ? logoUrls[selectedLogoIndex! * 2 + 1]
+                : hasIsotipo
+                  ? logoUrls[selectedLogoIndex! + 1]
+                  : logoUrls[selectedLogoIndex!];
               return (
               <div className="space-y-3">
                 <p className="text-sm font-medium text-slate-700">
@@ -252,7 +308,7 @@ function ConfirmarContent() {
                             headers: { "Content-Type": "application/json" },
                             body: JSON.stringify({
                               formId,
-                              selectedLogoUrl: hasIsotipo ? logoUrls[selectedLogoIndex + 1] : logoUrls[selectedLogoIndex]
+                              selectedLogoUrl: selectedImagotipoUrl
                             })
                           });
                           if (!res.ok) return;
@@ -280,8 +336,17 @@ function ConfirmarContent() {
           </div>
         )}
         {previewsReady && formData && logoUrls && selectedLogoIndex !== null && (() => {
-          const isotipoUrl = logoUrls[0];
-          const imagotipoUrl = logoUrls.length > 4 ? logoUrls[selectedLogoIndex + 1] : logoUrls[selectedLogoIndex];
+          const isPairFormat = logoUrls.length >= 8 && logoUrls.length % 2 === 0;
+          const isotipoUrl = isPairFormat
+            ? logoUrls[selectedLogoIndex * 2]!
+            : logoUrls.length > 4
+              ? logoUrls[0]
+              : logoUrls[selectedLogoIndex];
+          const imagotipoUrl = isPairFormat
+            ? logoUrls[selectedLogoIndex * 2 + 1]!
+            : logoUrls.length > 4
+              ? logoUrls[selectedLogoIndex + 1]
+              : logoUrls[selectedLogoIndex];
           return (
           <div className="border-t border-slate-200 pt-8 space-y-8">
             <div>
@@ -403,14 +468,18 @@ function ConfirmarContent() {
                       <>
                         <header className="flex-shrink-0 px-6 pt-4 pb-3 text-center w-full" style={{ minHeight: "20%" }}>
                           <div className="flex justify-center mb-2">
-                            <img src={imagotipoUrl} alt="" className="h-16 w-auto object-contain" />
+                            <img src={isotipoUrl} alt="" className="h-16 w-auto object-contain" />
                           </div>
                           <p className="font-bold text-slate-900 uppercase tracking-wide" style={{ fontFamily: "Montserrat, sans-serif", fontSize: "clamp(0.9rem, 2.5vw, 1.25rem)" }}>
                             {nombreReceta || "DR. [Nombre]"}
                           </p>
-                          {formData.recetaEspecialidad && (
-                            <p className="text-slate-600 mt-0.5" style={{ fontSize: "0.8rem" }}>{formData.recetaEspecialidad}</p>
-                          )}
+                          {((formData.recetaEspecialidad || formData.especialidad || "").trim() || (formData.subespecialidad || "").trim()) ? (
+                            <p className="text-slate-600 mt-0.5" style={{ fontSize: "0.8rem" }}>
+                              {(formData.recetaEspecialidad || formData.especialidad || "").trim()}
+                              {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim()) ? " | " : ""}
+                              {(formData.subespecialidad || "").trim()}
+                            </p>
+                          ) : null}
                           {formData.recetaCedulaProfesional && (
                             <p className="text-slate-600 text-xs mt-0.5">CÉDULA PROFESIONAL: {formData.recetaCedulaProfesional}</p>
                           )}
@@ -437,7 +506,7 @@ function ConfirmarContent() {
                               return (
                                 <>
                                   <div className="grid grid-cols-4 gap-x-4 gap-y-1">
-                                    <div><span className="text-slate-500">Fecha:</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[80px] align-baseline" /></div>
+                                    <div className="flex items-baseline gap-1 whitespace-nowrap"><span className="text-slate-500">Fecha:</span><span className="border-b border-slate-300 border-dotted inline-block min-w-[80px] align-baseline flex-1 shrink-0" /></div>
                                   </div>
                                   {lineales.length > 0 && (
                                     <div className="grid grid-cols-4 gap-x-4 gap-y-1">
@@ -510,7 +579,13 @@ function ConfirmarContent() {
                           <div className="text-left">
                             <img src={imagotipoUrl} alt="" className="w-[7.5rem] h-[7.5rem] mb-2 object-contain object-left" />
                             <p className="font-semibold text-sm text-slate-800">{nombreReceta || "Dr. [Nombre]"}</p>
-                            {formData.recetaEspecialidad && <p className="text-xs mt-0.5 text-slate-600">{formData.recetaEspecialidad}</p>}
+                            {((formData.recetaEspecialidad || formData.especialidad || "").trim() || (formData.subespecialidad || "").trim()) ? (
+                            <p className="text-xs mt-0.5 text-slate-600">
+                              {(formData.recetaEspecialidad || formData.especialidad || "").trim()}
+                              {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim()) ? " | " : ""}
+                              {(formData.subespecialidad || "").trim()}
+                            </p>
+                          ) : null}
                             {formData.recetaCedulaProfesional && <p className="text-[10px] mt-0.5 text-slate-600">Cédula profesional: {formData.recetaCedulaProfesional}</p>}
                             {formData.recetaCedulaEspecialidad?.trim() && <p className="text-[10px] text-slate-600">Cédula especialidad: {formData.recetaCedulaEspecialidad}</p>}
                           </div>
@@ -518,10 +593,19 @@ function ConfirmarContent() {
                             <p>FECHA <span className="inline-block border-b border-slate-400 border-dotted w-8 align-baseline" /> / <span className="inline-block border-b border-slate-400 border-dotted w-8 align-baseline" /> / <span className="inline-block border-b border-slate-400 border-dotted w-10 align-baseline" /></p>
                           </div>
                         </div>
-                        {/* Datos del paciente */}
+                        {/* Datos del paciente: campos que pidió en el formulario */}
                         <div className="px-6 py-2 space-y-2 text-left w-full text-slate-700">
-                          <p className="text-xs">NOMBRE DEL PACIENTE <span className="inline-block border-b border-slate-400 min-w-[180px] align-baseline ml-1 opacity-70" /></p>
-                          <p className="text-xs">EDAD <span className="inline-block border-b border-slate-400 min-w-[80px] align-baseline ml-1 opacity-70" /></p>
+                          {(() => {
+                            const campos = formData.recetaCamposPersonalizados?.trim()
+                              ? formData.recetaCamposPersonalizados.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean)
+                              : ["Paciente", "Edad", "Sexo", "Alergias", "Talla", "Peso", "IMC", "TA", "FC", "FR", "TEMP", "Diagnóstico", "Tratamiento"];
+                            const lineales = campos.filter((c) => !/^(tratamiento|diagnóstico|diagnostico)$/i.test(c));
+                            return lineales.map((label) => (
+                              <p key={label} className="text-xs">
+                                {label.toUpperCase()} <span className="inline-block border-b border-slate-400 min-w-[80px] align-baseline ml-1 opacity-70" />
+                              </p>
+                            ));
+                          })()}
                         </div>
                         {/* Área prescripción */}
                         <div className="flex-1 relative flex px-6 py-4 min-h-[200px] w-full">

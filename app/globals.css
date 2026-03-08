@@ -85,3 +85,25 @@ body {
     stroke-dashoffset: -60;
   }
 }
+
+/* Heartbeat / ECG loading (medical theme) */
+.logo-loading-heartbeat {
+  stroke-dasharray: 120;
+  stroke-dashoffset: 120;
+  animation: logo-loading-heartbeat 1.8s ease-in-out infinite;
+}
+
+@keyframes logo-loading-heartbeat {
+  0% {
+    stroke-dashoffset: 120;
+  }
+  40% {
+    stroke-dashoffset: 0;
+  }
+  50% {
+    stroke-dashoffset: 0;
+  }
+  100% {
+    stroke-dashoffset: -120;
+  }
+}

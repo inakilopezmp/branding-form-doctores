@@ -12,6 +12,7 @@ import { parseAccentColor, hexToColorDescription } from "../../../lib/colors";
  * 2. Tabla branding_forms: agregar columna logo_urls (tipo text[] o jsonb).
  * 3. .env: GEMINI_API_KEY (https://aistudio.google.com/apikey) y SUPABASE_API_KEY.
  * 4. Opcional: IMAGEN_MODEL. Por defecto gemini-2.5-flash-image. Alternativas: imagen-4.0-generate-001, imagen-4.0-ultra-generate-001.
+ * 5. Optimización: LOGO_GEN_DELAY_MS (default 6000) = pausa en ms entre lotes; LOGO_GEN_CONCURRENCY (default 2) = cuántas imágenes se generan en paralelo por lote.
  */
 
 const SUPABASE_BASE = "https://yohtffzgmwtuxvnqwgyu.supabase.co";
@@ -23,8 +24,10 @@ function isGeminiFlashImageModel(model: string): boolean {
 }
 
 type LogoVariant = "isotipo" | "imagotipo";
-/** Orden: [isotipo, imagotipo, imagotipo, imagotipo, imagotipo]. Tarjeta usa [0], receta usa el imagotipo elegido [1-4]. */
-const LOGO_GENERATION_ORDER: LogoVariant[] = ["isotipo", "imagotipo", "imagotipo", "imagotipo", "imagotipo"];
+/** Orden final: [isotipo1, imagotipo1, isotipo2, imagotipo2, isotipo3, imagotipo3, isotipo4, imagotipo4]. Fase 1: 4 imagotipos en paralelo. Fase 2: 4 isotipos en paralelo, cada uno a partir de la imagen del imagotipo correspondiente. */
+const NUM_IMAGOTIPOS = 4;
+const ISOTIPO_FROM_IMAGE_PROMPT =
+  "Crea una imagen donde solo se vea el isotipo (símbolo o icono) de este logo. Sin texto, sin letras, sin nombre. Solo el símbolo o icono, centrado en fondo blanco, manteniendo el mismo estilo y color. Una sola imagen, un único símbolo.";
 
 type FormPayload = {
   nombreCompleto?: string;
@@ -122,7 +125,7 @@ Generar una sola imagen con un único logo: símbolo + nombre "${nombreParaMarca
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { formId, form } = body as { formId: string; form: FormPayload };
+    const { formId, form, force } = body as { formId: string; form: FormPayload; force?: boolean };
 
     if (!formId || !form) {
       return NextResponse.json(
@@ -152,95 +155,127 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || SUPABASE_BASE;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
+    // Evitar generación duplicada: si ya hay un set completo de logos, no volver a generar (salvo force=true)
+    if (!force) {
+      const { data: existing } = await supabase
+        .from("branding_forms")
+        .select("logo_urls")
+        .eq("id", formId)
+        .maybeSingle();
+      const existingByID = existing ?? (await supabase.from("branding_forms").select("logo_urls").eq("ID", formId).maybeSingle()).data;
+    const existingUrls = (existingByID?.logo_urls ?? []) as string[];
+    if (existingUrls.length >= NUM_IMAGOTIPOS * 2) {
+      console.log("[generate-logos] formId " + formId + " ya tiene " + existingUrls.length + " logos; se omite generación duplicada.");
+      return NextResponse.json({ success: true, count: existingUrls.length, urls: existingUrls });
+    }
+    }
+
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const logoUrls: string[] = [];
 
     const promptsSent: string[] = [];
 
     const model = process.env.IMAGEN_MODEL || DEFAULT_IMAGEN_MODEL;
+    const delayMs = Math.max(2000, Number(process.env.LOGO_GEN_DELAY_MS) || 6000);
     let rateLimitHit = false;
-    const delayMs = 13000;
 
-    for (let i = 0; i < LOGO_GENERATION_ORDER.length; i++) {
-      if (i > 0) {
-        await new Promise((r) => setTimeout(r, delayMs));
-      }
-      const variant = LOGO_GENERATION_ORDER[i];
-      const prompt = buildLogoPromptForVariant(form, variant);
-      promptsSent.push(prompt);
-      console.log("[generate-logos] Prompt enviado (variante " + variant + ", índice " + i + "):\n" + prompt + "\n---");
+    const imagotipoPrompt = buildLogoPromptForVariant(form, "imagotipo");
+    promptsSent.push(imagotipoPrompt);
 
+    const generateImagotipo = async (variantIndex: number): Promise<{ url: string; bytes: string } | null> => {
+      const path = `${formId}/${2 * variantIndex + 1}.png`;
+      console.log("[generate-logos] Prompt imagotipo " + (variantIndex + 1) + " (1A-1D)...");
       let bytes: string | undefined;
       try {
         if (isGeminiFlashImageModel(model)) {
           const gcResponse = await ai.models.generateContent({
             model,
-            contents: prompt,
-            config: {
-              responseModalities: ["IMAGE"]
-            }
+            contents: imagotipoPrompt,
+            config: { responseModalities: ["IMAGE"] }
           });
           const part = gcResponse.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
           bytes = part?.inlineData?.data;
         } else {
           const response = await ai.models.generateImages({
             model,
-            prompt,
+            prompt: imagotipoPrompt,
             config: { numberOfImages: 1 }
           });
-          const img = response.generatedImages?.[0];
-          bytes = img?.image?.imageBytes;
+          bytes = response.generatedImages?.[0]?.image?.imageBytes;
         }
       } catch (imgErr: unknown) {
         const err = imgErr as { message?: string; status?: number; code?: number };
         const msg = String(err?.message ?? imgErr);
-
-        if (msg.includes("paid plans") || msg.includes("upgrade your account") || msg.includes("INVALID_ARGUMENT")) {
-          console.warn("[generate-logos] Imagen requiere plan de pago:", msg);
-          return NextResponse.json(
-            { success: false, reason: "paid_plan_required", error: "La generación de imágenes requiere un plan de pago en Google AI." },
-            { status: 200 }
-          );
+        if (msg.includes("paid plans") || msg.includes("upgrade your account") || msg.includes("INVALID_ARGUMENT")) throw { paidPlan: true };
+        if (err?.status === 429 || err?.code === 429 || /resource exhausted|quota|rate limit|rate_limit|RPM|RPD|429/i.test(msg)) {
+          console.error("[generate-logos] Límite de tasa (imagotipo " + (variantIndex + 1) + "):", msg);
+          throw { rateLimit: true };
         }
-
-        const isRateLimit =
-          err?.status === 429 ||
-          err?.code === 429 ||
-          /resource exhausted|quota|rate limit|rate_limit|RPM|RPD|429/i.test(msg);
-        if (isRateLimit) {
-          rateLimitHit = true;
-          console.error("[generate-logos] Límite de tasa/cuota alcanzado (índice " + i + "):", msg);
-          break;
-        }
-
-        console.error("[generate-logos] Error en variante " + variant + " (índice " + i + "):", imgErr);
-        continue;
+        console.error("[generate-logos] Error imagotipo " + (variantIndex + 1) + ":", imgErr);
+        return null;
       }
-
-      if (!bytes) {
-        console.error("[generate-logos] No se obtuvo imagen para variante", variant);
-        continue;
-      }
-
-      const buffer = Buffer.from(bytes, "base64");
-      const path = `${formId}/${i}.png`;
-
-      const { error: uploadError } = await supabase.storage
-        .from(LOGOS_BUCKET)
-        .upload(path, buffer, {
-          contentType: "image/png",
-          upsert: true
-        });
-
+      if (!bytes) return null;
+      const { error: uploadError } = await supabase.storage.from(LOGOS_BUCKET).upload(path, Buffer.from(bytes, "base64"), { contentType: "image/png", upsert: true });
       if (uploadError) {
-        console.error("[generate-logos] Error subiendo imagen a Storage:", uploadError);
-        continue;
+        console.error("[generate-logos] Error subiendo imagotipo:", uploadError);
+        return null;
       }
+      return { url: supabase.storage.from(LOGOS_BUCKET).getPublicUrl(path).data.publicUrl, bytes };
+    };
 
-      const {
-        data: { publicUrl }
-      } = supabase.storage.from(LOGOS_BUCKET).getPublicUrl(path);
-      logoUrls.push(publicUrl);
+    const generateIsotipoFromImage = async (imageBase64: string, variantIndex: number): Promise<string | null> => {
+      const path = `${formId}/${2 * variantIndex}.png`;
+      console.log("[generate-logos] Isotipo desde imagotipo " + (variantIndex + 1) + " (2A-2D)...");
+      try {
+        const gcResponse = await ai.models.generateContent({
+          model,
+          contents: [{ parts: [{ inlineData: { mimeType: "image/png", data: imageBase64 } }, { text: ISOTIPO_FROM_IMAGE_PROMPT }] }],
+          config: { responseModalities: ["IMAGE"] }
+        });
+        const part = gcResponse.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
+        const bytes = part?.inlineData?.data;
+        if (!bytes) return null;
+        const { error: uploadError } = await supabase.storage.from(LOGOS_BUCKET).upload(path, Buffer.from(bytes, "base64"), { contentType: "image/png", upsert: true });
+        if (uploadError) return null;
+        return supabase.storage.from(LOGOS_BUCKET).getPublicUrl(path).data.publicUrl;
+      } catch (err) {
+        console.error("[generate-logos] Error isotipo desde imagen " + (variantIndex + 1) + ":", err);
+        return null;
+      }
+    };
+
+    let phase1Results: ({ url: string; bytes: string } | null)[] = [];
+    try {
+      phase1Results = await Promise.all([0, 1, 2, 3].map((i) => generateImagotipo(i)));
+    } catch (e) {
+      if (e && typeof e === "object" && "paidPlan" in e) {
+        return NextResponse.json(
+          { success: false, reason: "paid_plan_required", error: "La generación de imágenes requiere un plan de pago en Google AI." },
+          { status: 200 }
+        );
+      }
+      if (e && typeof e === "object" && "rateLimit" in e) {
+        rateLimitHit = true;
+      }
+    }
+
+    await new Promise((r) => setTimeout(r, delayMs));
+
+    let phase2Results: (string | null)[] = [];
+    if (!rateLimitHit && isGeminiFlashImageModel(model)) {
+      promptsSent.push(ISOTIPO_FROM_IMAGE_PROMPT);
+      phase2Results = await Promise.all(
+        phase1Results.map((r, i) => (r?.bytes ? generateIsotipoFromImage(r.bytes, i) : Promise.resolve(null)))
+      );
+    }
+
+    for (let i = 0; i < NUM_IMAGOTIPOS; i++) {
+      const imUrl = phase1Results[i]?.url ?? null;
+      const isoUrl = phase2Results[i] ?? imUrl;
+      if (imUrl) {
+        logoUrls.push(isoUrl ?? imUrl);
+        logoUrls.push(imUrl);
+      }
     }
 
     if (rateLimitHit && logoUrls.length === 0) {
