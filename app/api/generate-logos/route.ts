@@ -42,7 +42,14 @@ type FormPayload = {
   simbolos?: string;
 };
 
-function buildLogoPromptForVariant(form: FormPayload, variant: LogoVariant): string {
+const APPEND_VARIATION_HINTS = [
+  "Variación distinta: estilo más minimalista y geométrico. Símbolo muy simple, líneas limpias.",
+  "Variación distinta: más detallado, símbolo orgánico o natural (hojas, raíces, crecimiento).",
+  "Variación distinta: enfoque en tipografía elegante, símbolo secundario y pequeño.",
+  "Variación distinta: estilo corporativo serio, símbolo abstracto o geométrico (círculos, líneas)."
+];
+
+function buildLogoPromptForVariant(form: FormPayload, variant: LogoVariant, variationHint?: string): string {
   const nombreCompleto = form.nombreCompleto?.trim() || "Médico";
   const titulo = (form.tituloAbreviado?.trim() || "Dr.").trim();
   const nombreParaMarca = `${titulo} ${nombreCompleto}`.trim();
@@ -118,6 +125,7 @@ PREFERENCIAS: Forma = ${formaTexto}. Estilo visual: ${estiloTexto}. ${iconografi
 COLORES: ${colorBlock}
 
 ${reglas}
+${variationHint ? `\nIMPORTANTE - ESTILO DIFERENTE: ${variationHint} El resultado debe verse claramente distinto a otras variantes.\n` : ""}
 
 Generar una sola imagen con un único logo: símbolo + nombre "${nombreParaMarca}" + especialidad "${especialidad}". Fondo blanco o transparente. Centrado. Sin palabras genéricas ni etiquetas. Sin repetir el logo ni mostrar variantes.`;
 }
@@ -125,7 +133,7 @@ Generar una sola imagen con un único logo: símbolo + nombre "${nombreParaMarca
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { formId, form, force } = body as { formId: string; form: FormPayload; force?: boolean };
+    const { formId, form, force, append } = body as { formId: string; form: FormPayload; force?: boolean; append?: boolean };
 
     if (!formId || !form) {
       return NextResponse.json(
@@ -155,23 +163,18 @@ export async function POST(req: Request) {
     const supabaseUrl = process.env.SUPABASE_URL || SUPABASE_BASE;
     const supabase = createClient(supabaseUrl, supabaseKey);
 
-    // Evitar generación duplicada: si ya hay un set completo de logos, no volver a generar (salvo force=true)
-    if (!force) {
-      const { data: existing } = await supabase
-        .from("branding_forms")
-        .select("logo_urls")
-        .eq("id", formId)
-        .maybeSingle();
-      const existingByID = existing ?? (await supabase.from("branding_forms").select("logo_urls").eq("ID", formId).maybeSingle()).data;
-    const existingUrls = (existingByID?.logo_urls ?? []) as string[];
-    if (existingUrls.length >= NUM_IMAGOTIPOS * 2) {
+    const r1 = await supabase.from("branding_forms").select("logo_urls").eq("id", formId).maybeSingle();
+    const r2 = r1.data ? r1 : await supabase.from("branding_forms").select("logo_urls").eq("ID", formId).maybeSingle();
+    const existingUrls = (r2.data?.logo_urls ?? []) as string[];
+
+    if (!force && !append && existingUrls.length >= NUM_IMAGOTIPOS * 2) {
       console.log("[generate-logos] formId " + formId + " ya tiene " + existingUrls.length + " logos; se omite generación duplicada.");
       return NextResponse.json({ success: true, count: existingUrls.length, urls: existingUrls });
-    }
     }
 
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const logoUrls: string[] = [];
+    const variantIndices = append ? [4, 5, 6, 7] : [0, 1, 2, 3];
 
     const promptsSent: string[] = [];
 
@@ -179,18 +182,23 @@ export async function POST(req: Request) {
     const delayMs = Math.max(2000, Number(process.env.LOGO_GEN_DELAY_MS) || 6000);
     let rateLimitHit = false;
 
-    const imagotipoPrompt = buildLogoPromptForVariant(form, "imagotipo");
+    const getImagotipoPrompt = (variantIndex: number) => {
+      const hint = append && variantIndex >= 4 ? APPEND_VARIATION_HINTS[variantIndex - 4] : undefined;
+      return buildLogoPromptForVariant(form, "imagotipo", hint);
+    };
+    const imagotipoPrompt = getImagotipoPrompt(variantIndices[0]!);
     promptsSent.push(imagotipoPrompt);
 
     const generateImagotipo = async (variantIndex: number): Promise<{ url: string; bytes: string } | null> => {
       const path = `${formId}/${2 * variantIndex + 1}.png`;
-      console.log("[generate-logos] Prompt imagotipo " + (variantIndex + 1) + " (1A-1D)...");
+      const prompt = getImagotipoPrompt(variantIndex);
+      console.log("[generate-logos] Prompt imagotipo " + (variantIndex + 1) + (append && variantIndex >= 4 ? " (variación nueva)" : "") + "...");
       let bytes: string | undefined;
       try {
         if (isGeminiFlashImageModel(model)) {
           const gcResponse = await ai.models.generateContent({
             model,
-            contents: imagotipoPrompt,
+            contents: prompt,
             config: { responseModalities: ["IMAGE"] }
           });
           const part = gcResponse.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
@@ -198,7 +206,7 @@ export async function POST(req: Request) {
         } else {
           const response = await ai.models.generateImages({
             model,
-            prompt: imagotipoPrompt,
+            prompt,
             config: { numberOfImages: 1 }
           });
           bytes = response.generatedImages?.[0]?.image?.imageBytes;
@@ -246,7 +254,7 @@ export async function POST(req: Request) {
 
     let phase1Results: ({ url: string; bytes: string } | null)[] = [];
     try {
-      phase1Results = await Promise.all([0, 1, 2, 3].map((i) => generateImagotipo(i)));
+      phase1Results = await Promise.all(variantIndices.map((i) => generateImagotipo(i)));
     } catch (e) {
       if (e && typeof e === "object" && "paidPlan" in e) {
         return NextResponse.json(
@@ -265,11 +273,11 @@ export async function POST(req: Request) {
     if (!rateLimitHit && isGeminiFlashImageModel(model)) {
       promptsSent.push(ISOTIPO_FROM_IMAGE_PROMPT);
       phase2Results = await Promise.all(
-        phase1Results.map((r, i) => (r?.bytes ? generateIsotipoFromImage(r.bytes, i) : Promise.resolve(null)))
+        phase1Results.map((r, i) => (r?.bytes ? generateIsotipoFromImage(r.bytes, variantIndices[i]!) : Promise.resolve(null)))
       );
     }
 
-    for (let i = 0; i < NUM_IMAGOTIPOS; i++) {
+    for (let i = 0; i < phase1Results.length; i++) {
       const imUrl = phase1Results[i]?.url ?? null;
       const isoUrl = phase2Results[i] ?? imUrl;
       if (imUrl) {
@@ -277,6 +285,8 @@ export async function POST(req: Request) {
         logoUrls.push(imUrl);
       }
     }
+
+    const finalUrls = append ? [...existingUrls, ...logoUrls] : logoUrls;
 
     if (rateLimitHit && logoUrls.length === 0) {
       return NextResponse.json(
@@ -289,18 +299,18 @@ export async function POST(req: Request) {
       );
     }
 
-    if (logoUrls.length > 0) {
+    if (finalUrls.length > 0) {
       let updateError = (
         await supabase
           .from("branding_forms")
-          .update({ logo_urls: logoUrls })
+          .update({ logo_urls: finalUrls })
           .eq("id", formId)
       ).error;
       if (updateError) {
         updateError = (
           await supabase
             .from("branding_forms")
-            .update({ logo_urls: logoUrls })
+            .update({ logo_urls: finalUrls })
             .eq("ID", formId)
         ).error;
       }
@@ -311,8 +321,8 @@ export async function POST(req: Request) {
 
     const res: { success: true; count: number; urls: string[]; debug_prompts?: string[] } = {
       success: true,
-      count: logoUrls.length,
-      urls: logoUrls
+      count: finalUrls.length,
+      urls: finalUrls
     };
     if (process.env.NODE_ENV === "development" && promptsSent.length > 0) {
       res.debug_prompts = promptsSent;

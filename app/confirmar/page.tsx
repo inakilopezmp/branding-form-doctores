@@ -2,7 +2,6 @@
 
 import { useSearchParams } from "next/navigation";
 import { useMemo, useEffect, useState, useRef, Suspense } from "react";
-import { STRIPE_URL } from "../../lib/constants";
 import { parseAccentColor } from "../../lib/colors";
 import StyledQR from "../../components/StyledQR";
 
@@ -12,6 +11,7 @@ type FormData = {
   especialidad?: string;
   subespecialidad?: string;
   cedulaProfesional?: string;
+  cedulaEspecialidad?: string;
   tarjetaTituloProfesional?: string;
   tarjetaInfoExtra?: string;
   tarjetaTel?: boolean;
@@ -115,7 +115,14 @@ function ConfirmarContent() {
   const [recetaFormato] = useState<"media_carta" | "carta" | "a5">("a5");
   const [recetaOrientacion, setRecetaOrientacion] = useState<"horizontal" | "vertical">("vertical");
   const [recetaVariacion, setRecetaVariacion] = useState<1 | 2>(1);
+  const [pollLogosKey, setPollLogosKey] = useState(0);
+  const [regeneratingLogos, setRegeneratingLogos] = useState(false);
+  const [downloading, setDownloading] = useState<"tarjeta" | "receta" | "logos" | null>(null);
   const intervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const regeneratingMinCountRef = useRef<number | null>(null);
+  const cardAnversoRef = useRef<HTMLDivElement>(null);
+  const cardReversoRef = useRef<HTMLDivElement>(null);
+  const recetaRef = useRef<HTMLDivElement>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [loadingProgress, setLoadingProgress] = useState(0);
 
@@ -147,25 +154,22 @@ function ConfirmarContent() {
   }, [logosLoading]);
 
   useEffect(() => {
-    if (!logosLoading) return;
+    if (!logosLoading && !regeneratingLogos) return;
     const start = Date.now();
-    const totalMs = 90000;
+    const totalMs = 30000;
     const tick = () => {
       const elapsed = Math.min(Date.now() - start, totalMs);
       if (elapsed >= totalMs) {
         setLoadingProgress(100);
         return;
       }
-      if (elapsed < 60000) {
-        setLoadingProgress((elapsed / 60000) * 80);
-      } else {
-        setLoadingProgress(80 + ((elapsed - 60000) / 30000) * 20);
-      }
+      const t = elapsed / totalMs;
+      setLoadingProgress(100 * Math.pow(t, 0.55));
     };
     tick();
-    const id = setInterval(tick, 500);
+    const id = setInterval(tick, 200);
     return () => clearInterval(id);
-  }, [logosLoading]);
+  }, [logosLoading, regeneratingLogos]);
 
   useEffect(() => {
     if (!logosLoading) setLoadingProgress(100);
@@ -177,15 +181,20 @@ function ConfirmarContent() {
       try {
         const res = await fetch("/api/logos?formId=" + encodeURIComponent(formId));
         const data = await res.json().catch(() => null);
-        if (data?.success && Array.isArray(data.logo_urls) && data.logo_urls.length > 0) {
-          setLogoUrls(data.logo_urls);
-          setLogosLoading(false);
-          if (intervalRef.current) {
-            clearInterval(intervalRef.current);
-            intervalRef.current = null;
-          }
-          return true;
+        if (!data?.success || !Array.isArray(data.logo_urls)) return false;
+        const incoming = data.logo_urls as string[];
+        if (incoming.length === 0) return false;
+        const minForRegenerating = regeneratingMinCountRef.current;
+        if (minForRegenerating != null && incoming.length < minForRegenerating) return false;
+        if (minForRegenerating != null) regeneratingMinCountRef.current = null;
+        setLogoUrls(incoming);
+        setLogosLoading(false);
+        setRegeneratingLogos(false);
+        if (intervalRef.current) {
+          clearInterval(intervalRef.current);
+          intervalRef.current = null;
         }
+        return true;
       } catch {
         // ignore
       }
@@ -196,12 +205,13 @@ function ConfirmarContent() {
     const t = setTimeout(() => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       setLogosLoading(false);
+      setRegeneratingLogos(false);
     }, 120000);
     return () => {
       if (intervalRef.current) clearInterval(intervalRef.current);
       clearTimeout(t);
     };
-  }, [formId]);
+  }, [formId, pollLogosKey]);
 
   return (
     <main className="min-h-screen bg-slate-100 flex items-center justify-center px-4 py-10">
@@ -229,7 +239,7 @@ function ConfirmarContent() {
                   No cierres esta página. Estamos generando tu identidad visual.
                 </p>
                 <p className="text-slate-500 text-sm">
-                  Esto tarda aproximadamente 90 segundos.
+                  Esto tarda aproximadamente 30 segundos.
                 </p>
                 <div className="logo-loading-animation flex items-center justify-center w-28 h-20 text-[#6556F2]" aria-hidden>
                   <svg viewBox="0 0 120 60" className="w-full h-full max-h-20" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -255,6 +265,17 @@ function ConfirmarContent() {
                 </p>
               </div>
             )}
+            {(regeneratingLogos && logoUrls && logoUrls.length > 0) && (
+              <div className="w-full max-w-sm space-y-2 mx-auto">
+                <p className="text-sm text-slate-600 text-center">Generando más logos…</p>
+                <div className="h-2 bg-slate-200 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-[#6556F2] rounded-full transition-all duration-300 ease-out"
+                    style={{ width: `${Math.min(loadingProgress, 100)}%` }}
+                  />
+                </div>
+              </div>
+            )}
             {logoUrls && logoUrls.length > 0 && (() => {
               const isPairFormat = logoUrls.length >= 8 && logoUrls.length % 2 === 0;
               const hasIsotipo = isPairFormat || logoUrls.length > 4;
@@ -263,6 +284,9 @@ function ConfirmarContent() {
                 : hasIsotipo
                   ? logoUrls.slice(1)
                   : logoUrls;
+              const isotiposForSelector = isPairFormat
+                ? Array.from({ length: logoUrls.length / 2 }, (_, i) => logoUrls[i * 2]!)
+                : null;
               if (imagotipos.length === 0) return null;
               const selectedImagotipoUrl = isPairFormat
                 ? logoUrls[selectedLogoIndex! * 2 + 1]
@@ -271,11 +295,43 @@ function ConfirmarContent() {
                   : logoUrls[selectedLogoIndex!];
               return (
               <div className="space-y-3">
-                <p className="text-sm font-medium text-slate-700">
-                  Selecciona el logo que te guste
-                </p>
+                <div className="flex flex-wrap items-center justify-center gap-3">
+                  <p className="text-sm font-medium text-slate-700 w-full text-center">
+                    Selecciona el logo que te guste
+                  </p>
+                  <button
+                    type="button"
+                    disabled={regeneratingLogos}
+                    onClick={async () => {
+                      if (!formId || !logoUrls?.length) return;
+                      regeneratingMinCountRef.current = logoUrls.length + 1;
+                      setLoadingProgress(0);
+                      setRegeneratingLogos(true);
+                      try {
+                        const dataRes = await fetch("/api/form-data?formId=" + encodeURIComponent(formId));
+                        const data = await dataRes.json().catch(() => null);
+                        if (!data?.success || !data?.form) {
+                          regeneratingMinCountRef.current = null;
+                          setRegeneratingLogos(false);
+                          return;
+                        }
+                        await fetch("/api/generate-logos", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ formId, form: data.form, append: true })
+                        });
+                        setPollLogosKey((k) => k + 1);
+                      } catch {
+                        setRegeneratingLogos(false);
+                      }
+                    }}
+                    className="text-sm text-[#6556F2] hover:underline disabled:opacity-60"
+                  >
+                    {regeneratingLogos ? "Generando…" : "Generar nuevos logos"}
+                  </button>
+                </div>
                 <div className="flex flex-wrap justify-center gap-3">
-                  {imagotipos.map((url, i) => (
+                  {imagotipos.map((_, i) => (
                     <button
                       key={i}
                       type="button"
@@ -287,7 +343,7 @@ function ConfirmarContent() {
                       }`}
                     >
                       <img
-                        src={url}
+                        src={isotiposForSelector ? isotiposForSelector[i]! : imagotipos[i]}
                         alt={`Logo ${i + 1}`}
                         className="h-48 w-auto object-contain pointer-events-none"
                       />
@@ -355,6 +411,7 @@ function ConfirmarContent() {
                 <div className="flex flex-col items-center gap-1">
                   <p className="text-xs text-slate-500">Anverso</p>
                   <div
+                    ref={cardAnversoRef}
                     className="bg-white shadow-lg rounded-sm overflow-hidden border border-slate-200 flex items-center justify-center"
                     style={{ width: "85.6mm", minHeight: "53.98mm", maxWidth: "100%" }}
                   >
@@ -364,6 +421,7 @@ function ConfirmarContent() {
                 <div className="flex flex-col items-center gap-1">
                   <p className="text-xs text-slate-500">Reverso</p>
                   <div
+                    ref={cardReversoRef}
                     className="bg-white shadow-lg rounded-sm overflow-visible border border-slate-200 relative"
                     style={{ width: "85.6mm", minHeight: "53.98mm", maxWidth: "100%" }}
                   >
@@ -378,8 +436,8 @@ function ConfirmarContent() {
                           </p>
                           <p className="text-slate-600 text-[10px] font-normal mt-0.5">
                             {(formData.recetaEspecialidad || formData.especialidad || "").trim()}
-                            {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim()) ? " | " : ""}
-                            {(formData.subespecialidad || "").trim()}
+                            {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo") ? " | " : ""}
+                            {(formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo") ? formData.subespecialidad.trim() : ""}
                           </p>
                           <p className="text-slate-800 text-[10px] font-bold mt-0.5">
                             {formData.recetaCedulaProfesional || formData.cedulaProfesional || ""}
@@ -451,9 +509,11 @@ function ConfirmarContent() {
               </div>
               <div className="flex justify-center overflow-x-auto">
                 <div
+                  ref={recetaRef}
                   className="bg-white shadow-xl overflow-hidden border border-slate-200 flex flex-col"
                   style={{
                     width: (recetaOrientacion === "vertical" ? RECETA_SIZES_LANDSCAPE[recetaFormato]?.h : RECETA_SIZES_LANDSCAPE[recetaFormato]?.w) ?? (recetaOrientacion === "vertical" ? RECETA_SIZES_LANDSCAPE.carta.h : RECETA_SIZES_LANDSCAPE.carta.w),
+                    height: (recetaOrientacion === "vertical" ? RECETA_SIZES_LANDSCAPE[recetaFormato]?.w : RECETA_SIZES_LANDSCAPE[recetaFormato]?.h) ?? (recetaOrientacion === "vertical" ? RECETA_SIZES_LANDSCAPE.carta.w : RECETA_SIZES_LANDSCAPE.carta.h),
                     minHeight: (recetaOrientacion === "vertical" ? RECETA_SIZES_LANDSCAPE[recetaFormato]?.w : RECETA_SIZES_LANDSCAPE[recetaFormato]?.h) ?? (recetaOrientacion === "vertical" ? RECETA_SIZES_LANDSCAPE.carta.w : RECETA_SIZES_LANDSCAPE.carta.h),
                     maxWidth: "100%",
                     fontFamily: recetaVariacion === 2 ? "Montserrat, Poppins, 'Open Sans', sans-serif" : "system-ui, 'Segoe UI', 'Helvetica Neue', Arial, sans-serif"
@@ -463,28 +523,28 @@ function ConfirmarContent() {
                     const accent = parseAccentColor(formData.coloresPreferidos);
                     const titulo = (formData.tituloAbreviado || "Dr.").toUpperCase();
                     const nombreReceta = titulo + " " + (formData.nombreCompleto || "").toUpperCase();
-                    const hasCedulaEsp = !!(formData.recetaCedulaEspecialidad?.trim());
+                    const hasCedulaEsp = !!(formData.recetaCedulaEspecialidad?.trim() || formData.cedulaEspecialidad?.trim());
                     return (
                       <>
                         <header className="flex-shrink-0 px-6 pt-4 pb-3 text-center w-full" style={{ minHeight: "20%" }}>
                           <div className="flex justify-center mb-2">
-                            <img src={isotipoUrl} alt="" className="h-16 w-auto object-contain" />
+                            <img src={isotipoUrl} alt="" className="h-32 w-auto object-contain" />
                           </div>
                           <p className="font-bold text-slate-900 uppercase tracking-wide" style={{ fontFamily: "Montserrat, sans-serif", fontSize: "clamp(0.9rem, 2.5vw, 1.25rem)" }}>
                             {nombreReceta || "DR. [Nombre]"}
                           </p>
-                          {((formData.recetaEspecialidad || formData.especialidad || "").trim() || (formData.subespecialidad || "").trim()) ? (
+                          {((formData.recetaEspecialidad || formData.especialidad || "").trim() || (formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo")) ? (
                             <p className="text-slate-600 mt-0.5" style={{ fontSize: "0.8rem" }}>
                               {(formData.recetaEspecialidad || formData.especialidad || "").trim()}
-                              {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim()) ? " | " : ""}
-                              {(formData.subespecialidad || "").trim()}
+                              {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo") ? " | " : ""}
+                              {(formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo") ? formData.subespecialidad.trim() : ""}
                             </p>
                           ) : null}
-                          {formData.recetaCedulaProfesional && (
-                            <p className="text-slate-600 text-xs mt-0.5">CÉDULA PROFESIONAL: {formData.recetaCedulaProfesional}</p>
+                          {(formData.recetaCedulaProfesional || formData.cedulaProfesional) && (
+                            <p className="text-slate-600 text-xs mt-0.5">CÉDULA PROFESIONAL: {formData.recetaCedulaProfesional || formData.cedulaProfesional}</p>
                           )}
-                          {hasCedulaEsp && (
-                            <p className="text-slate-600 text-xs">CÉDULA ESPECIALIDAD: {formData.recetaCedulaEspecialidad}</p>
+                          {(formData.recetaCedulaEspecialidad?.trim() || formData.cedulaEspecialidad?.trim()) && (
+                            <p className="text-slate-600 text-xs">CÉDULA ESPECIALIDAD: {formData.recetaCedulaEspecialidad || formData.cedulaEspecialidad}</p>
                           )}
                           <div className="mt-3 h-0.5 w-full" style={{ backgroundColor: accent }} />
                         </header>
@@ -495,7 +555,7 @@ function ConfirmarContent() {
                               <img src={imagotipoUrl} alt="" className="w-[min(80%,700px)] h-auto max-h-[70%] object-contain" />
                             </div>
                           )}
-                          <div className="relative space-y-3 text-xs text-slate-700">
+                          <div className="relative space-y-3 text-xs text-slate-700 text-left">
                             {(() => {
                               const campos = formData.recetaCamposPersonalizados?.trim()
                                 ? formData.recetaCamposPersonalizados.split(/[\n,]+/).map((c) => c.trim()).filter(Boolean)
@@ -505,25 +565,25 @@ function ConfirmarContent() {
                               const tieneTratamiento = campos.some((c) => /^tratamiento$/i.test(c));
                               return (
                                 <>
-                                  <div className="grid grid-cols-4 gap-x-4 gap-y-1">
+                                  <div className="grid grid-cols-4 gap-x-4 gap-y-1 text-left">
                                     <div className="flex items-baseline gap-1 whitespace-nowrap"><span className="text-slate-500">Fecha:</span><span className="border-b border-slate-300 border-dotted inline-block min-w-[80px] align-baseline flex-1 shrink-0" /></div>
                                   </div>
                                   {lineales.length > 0 && (
-                                    <div className="grid grid-cols-4 gap-x-4 gap-y-1">
+                                    <div className="grid grid-cols-4 gap-x-4 gap-y-1 text-left">
                                       {lineales.slice(0, 4).map((l) => (
                                         <div key={l}><span className="text-slate-500">{l}:</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[50px] align-baseline" /></div>
                                       ))}
                                     </div>
                                   )}
                                   {lineales.length > 4 && (
-                                    <div className="grid grid-cols-4 gap-x-4 gap-y-1">
+                                    <div className="grid grid-cols-4 gap-x-4 gap-y-1 text-left">
                                       {lineales.slice(4, 8).map((l) => (
                                         <div key={l}><span className="text-slate-500">{l}:</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[50px] align-baseline" /></div>
                                       ))}
                                     </div>
                                   )}
                                   {lineales.length > 8 && (
-                                    <div className="grid grid-cols-7 gap-x-2 gap-y-1">
+                                    <div className="grid grid-cols-7 gap-x-2 gap-y-1 text-left">
                                       {lineales.slice(8).map((l) => (
                                         <div key={l}><span className="text-slate-500">{l}</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[28px] align-baseline" /></div>
                                       ))}
@@ -554,11 +614,11 @@ function ConfirmarContent() {
                         <footer className="flex-shrink-0 flex items-center justify-center gap-6 px-6 py-1.5 text-white w-full" style={{ backgroundColor: accent }}>
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <IconPhone className="shrink-0 text-white" />
-                            <span>{formData.recetaTelefono || "—"}</span>
+                            <span>{formData.recetaTelefono || formData.telefono || "—"}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <IconMapPin className="shrink-0 text-white" />
-                            <span>{formData.recetaDireccion || "—"}</span>
+                            <span>{formData.recetaDireccion || formData.direccionConsultorio || "—"}</span>
                           </div>
                           <div className="flex items-center gap-1.5 text-[10px]">
                             <IconMail className="shrink-0 text-white" />
@@ -577,19 +637,22 @@ function ConfirmarContent() {
                         {/* Encabezado superior izquierda + Fecha superior derecha */}
                         <div className="flex justify-between items-start px-6 pt-6 pb-4 w-full">
                           <div className="text-left">
-                            <img src={imagotipoUrl} alt="" className="w-[7.5rem] h-[7.5rem] mb-2 object-contain object-left" />
+                            <img src={isotipoUrl} alt="" className="w-[7.5rem] h-[7.5rem] mb-2 object-contain object-left" />
                             <p className="font-semibold text-sm text-slate-800">{nombreReceta || "Dr. [Nombre]"}</p>
-                            {((formData.recetaEspecialidad || formData.especialidad || "").trim() || (formData.subespecialidad || "").trim()) ? (
+                            {((formData.recetaEspecialidad || formData.especialidad || "").trim() || (formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo")) ? (
                             <p className="text-xs mt-0.5 text-slate-600">
                               {(formData.recetaEspecialidad || formData.especialidad || "").trim()}
-                              {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim()) ? " | " : ""}
-                              {(formData.subespecialidad || "").trim()}
+                              {((formData.recetaEspecialidad || formData.especialidad)?.trim() && formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo") ? " | " : ""}
+                              {(formData.subespecialidad?.trim() && formData.subespecialidad.trim().toLowerCase() !== "no tengo") ? formData.subespecialidad.trim() : ""}
                             </p>
                           ) : null}
-                            {formData.recetaCedulaProfesional && <p className="text-[10px] mt-0.5 text-slate-600">Cédula profesional: {formData.recetaCedulaProfesional}</p>}
-                            {formData.recetaCedulaEspecialidad?.trim() && <p className="text-[10px] text-slate-600">Cédula especialidad: {formData.recetaCedulaEspecialidad}</p>}
+                            {(formData.recetaCedulaProfesional || formData.cedulaProfesional) && <p className="text-[10px] mt-0.5 text-slate-600">Cédula profesional: {formData.recetaCedulaProfesional || formData.cedulaProfesional}</p>}
+                            {(formData.recetaCedulaEspecialidad?.trim() || formData.cedulaEspecialidad?.trim()) && <p className="text-[10px] text-slate-600">Cédula especialidad: {formData.recetaCedulaEspecialidad || formData.cedulaEspecialidad}</p>}
+                            {(formData.recetaDireccion || formData.direccionConsultorio) && (
+                              <p className="text-[10px] mt-1 text-slate-600">{formData.recetaDireccion || formData.direccionConsultorio}</p>
+                            )}
                           </div>
-                          <div className="text-right text-xs text-slate-600">
+                          <div className="text-right text-[10px] text-slate-600">
                             <p>FECHA <span className="inline-block border-b border-slate-400 border-dotted w-8 align-baseline" /> / <span className="inline-block border-b border-slate-400 border-dotted w-8 align-baseline" /> / <span className="inline-block border-b border-slate-400 border-dotted w-10 align-baseline" /></p>
                           </div>
                         </div>
@@ -601,7 +664,7 @@ function ConfirmarContent() {
                               : ["Paciente", "Edad", "Sexo", "Alergias", "Talla", "Peso", "IMC", "TA", "FC", "FR", "TEMP", "Diagnóstico", "Tratamiento"];
                             const lineales = campos.filter((c) => !/^(tratamiento|diagnóstico|diagnostico)$/i.test(c));
                             return lineales.map((label) => (
-                              <p key={label} className="text-xs">
+                              <p key={label} className="text-[10px]">
                                 {label.toUpperCase()} <span className="inline-block border-b border-slate-400 min-w-[80px] align-baseline ml-1 opacity-70" />
                               </p>
                             ));
@@ -622,23 +685,17 @@ function ConfirmarContent() {
                           <span className="text-[10px] opacity-80">FIRMA</span>
                         </div>
                         {/* Pie contacto esquina inferior derecha + dirección centrada abajo */}
-                        <div className={`mt-auto flex flex-col items-end px-6 w-full ${!(formData.recetaDireccion || formData.direccionConsultorio) ? "pb-6" : ""}`}>
-                          <div className="rounded-tl-xl rounded-tr-0 rounded-br-0 rounded-bl-0 px-4 py-3 text-xs space-y-2 shadow-sm text-slate-700" style={{ backgroundColor: accentTenue }}>
+                        <div className="mt-auto flex flex-col items-end px-6 pb-6 w-full">
+                          <div className="rounded-tl-xl rounded-tr-0 rounded-br-0 rounded-bl-0 px-5 py-3 text-[10px] space-y-2 text-slate-700" style={{ backgroundColor: accentTenue }}>
                             <div className="flex items-center gap-2 text-slate-700">
                               <IconPhone className="w-3.5 h-3.5 shrink-0 text-slate-600" />
-                              <span>{formData.recetaTelefono || "—"}</span>
+                              <span>{formData.recetaTelefono || formData.telefono || "—"}</span>
                             </div>
                             <div className="flex items-center gap-2 text-slate-700">
                               <IconMail className="w-3.5 h-3.5 shrink-0 text-slate-600" />
                               <span>{formData.email || "—"}</span>
                             </div>
                           </div>
-                          {(formData.recetaDireccion || formData.direccionConsultorio) && (
-                            <div className="mt-4 mb-4 w-full flex justify-center items-center gap-1.5 text-[10px] text-slate-600">
-                              <IconMapPin className="w-3 h-3 shrink-0 text-slate-500" />
-                              <span>{formData.recetaDireccion || formData.direccionConsultorio}</span>
-                            </div>
-                          )}
                         </div>
                       </div>
                     );
@@ -646,20 +703,91 @@ function ConfirmarContent() {
                 </div>
               </div>
             </div>
+            <div className="border-t border-slate-200 pt-6">
+              <h2 className="text-lg font-semibold text-slate-900 mb-3">Descargas</h2>
+              <div className="flex justify-center">
+                <button
+                  type="button"
+                  disabled={downloading !== null}
+                  onClick={async () => {
+                    if (!logoUrls?.length || selectedLogoIndex == null) return;
+                    const doctorName = `${formData.tituloAbreviado || "Dr."} ${formData.nombreCompleto || "Doctor"}`.trim();
+                    const safeName = doctorName.replace(/[/\\:*?"<>|]/g, "").trim() || "Doctor";
+                    const baseName = `${safeName} - `;
+                    try {
+                      setDownloading("tarjeta");
+                      const JSZip = (await import("jszip")).default;
+                      const { imageUrlToDataUrl, buildTarjetaPdf, buildRecetaPdf } = await import("../../lib/pdf-export");
+                      const zip = new JSZip();
+                      let isotipoDataUrl: string;
+                      let imagotipoDataUrl: string;
+                      try {
+                        isotipoDataUrl = await imageUrlToDataUrl(isotipoUrl);
+                        imagotipoDataUrl = await imageUrlToDataUrl(imagotipoUrl);
+                      } catch (e) {
+                        console.error("Carga de imágenes:", e);
+                        alert("No se pudieron cargar las imágenes del logo. Revisa la conexión.");
+                        setDownloading(null);
+                        return;
+                      }
+                      try {
+                        const blobCard = await buildTarjetaPdf(formData as import("../../lib/pdf-export").PdfFormData, isotipoDataUrl);
+                        zip.file(`${baseName}Tarjeta Personal.pdf`, blobCard);
+                      } catch (e) {
+                        console.error("Tarjeta PDF:", e);
+                      }
+                      setDownloading("receta");
+                      try {
+                        const blobReceta = await buildRecetaPdf(
+                          formData as import("../../lib/pdf-export").PdfFormData,
+                          {
+                            variacion: recetaVariacion,
+                            formato: recetaFormato,
+                            orientacion: recetaOrientacion,
+                            mostrarMarcaDeAgua: recetaMostrarMarcaDeAgua
+                          },
+                          isotipoDataUrl,
+                          imagotipoDataUrl
+                        );
+                        zip.file(`${baseName}Receta.pdf`, blobReceta);
+                      } catch (e) {
+                        console.error("Receta PDF:", e);
+                      }
+                      setDownloading("logos");
+                      try {
+                        const resIso = await fetch(isotipoUrl, { mode: "cors" });
+                        if (resIso.ok) zip.file(`${baseName}Isotipo.jpg`, await resIso.blob());
+                      } catch (e) {
+                        console.error("Isotipo:", e);
+                      }
+                      try {
+                        const resImag = await fetch(imagotipoUrl, { mode: "cors" });
+                        if (resImag.ok) zip.file(`${baseName}Imagotipo.jpg`, await resImag.blob());
+                      } catch (e) {
+                        console.error("Imagotipo:", e);
+                      }
+                      const zipBlob = await zip.generateAsync({ type: "blob" });
+                      const url = URL.createObjectURL(zipBlob);
+                      const a = document.createElement("a");
+                      a.href = url;
+                      a.download = `${baseName}Resultados.zip`;
+                      a.click();
+                      URL.revokeObjectURL(url);
+                    } catch (err) {
+                      alert("Error al generar la descarga: " + (err instanceof Error ? err.message : String(err)));
+                    } finally {
+                      setDownloading(null);
+                    }
+                  }}
+                  className="inline-flex items-center justify-center rounded-full px-6 py-3 text-sm font-semibold text-white bg-slate-700 hover:bg-slate-800 disabled:opacity-60"
+                >
+                  {downloading ? "Descargando…" : "Descargar Resultados"}
+                </button>
+              </div>
+            </div>
           </div>
           );
         })()}
-        {previewsReady && formData && logoUrls && selectedLogoIndex !== null && (
-          <div>
-            <a
-              href={STRIPE_URL}
-              className="inline-flex items-center justify-center rounded-full px-8 py-3 text-base font-semibold text-white shadow-md hover:opacity-90 transition-opacity"
-              style={{ backgroundColor: "#6556F2" }}
-            >
-              Continuar al pago
-            </a>
-          </div>
-        )}
       </div>
     </main>
   );

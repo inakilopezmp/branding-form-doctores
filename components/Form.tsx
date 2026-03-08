@@ -2,8 +2,6 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { FormEvent, useEffect, useMemo, useState } from "react";
-import { STRIPE_URL } from "../lib/constants";
-
 type Orientation = "horizontal" | "vertical" | "";
 type TamanoReceta = "media_carta" | "carta" | "a5" | "";
 
@@ -134,8 +132,10 @@ export default function Form({ onStepChange }: FormProps) {
   const [step, setStep] = useState(0);
   const [invalidFields, setInvalidFields] = useState<string[]>([]);
   const [hydrated, setHydrated] = useState(false);
+  const [tieneSubespecialidad, setTieneSubespecialidad] = useState<boolean | null>(null);
+  const [mostrarNombreClinica, setMostrarNombreClinica] = useState<boolean | null>(null);
 
-  const TOTAL_STEPS = 7;
+  const TOTAL_STEPS = 6;
   const isLastStep = step === TOTAL_STEPS;
   const isFormStep = step >= 1;
 
@@ -150,7 +150,16 @@ export default function Form({ onStepChange }: FormProps) {
         const data = JSON.parse(raw) as { form?: Partial<FormState>; step?: number };
         if (data.form && typeof data.step === "number" && data.step >= 0 && data.step <= TOTAL_STEPS) {
           setForm((prev) => ({ ...prev, ...data.form }));
-          setStep(data.step);
+          setStep(Math.min(data.step, TOTAL_STEPS));
+          const sub = (data.form as Partial<FormState>).subespecialidad;
+          if (sub !== undefined) {
+            const v = String(sub ?? "").trim();
+            setTieneSubespecialidad(v === "" || v === "No tengo" ? false : true);
+          }
+          const nomClinica = (data.form as Partial<FormState>).nombreClinica;
+          if (nomClinica !== undefined) {
+            setMostrarNombreClinica(String(nomClinica ?? "").trim() !== "" ? true : false);
+          }
         }
       }
     } catch {
@@ -254,7 +263,14 @@ export default function Form({ onStepChange }: FormProps) {
       const fields: string[] = [];
       if (!form.nombreCompleto.trim()) fields.push("nombreCompleto");
       if (!form.especialidad.trim()) fields.push("especialidad");
-      if (!form.subespecialidad.trim()) fields.push("subespecialidad");
+      if (tieneSubespecialidad === null) {
+        fields.push("tieneSubespecialidad");
+        return {
+          message: "Por favor indica si tienes subespecialidad.",
+          fields
+        };
+      }
+      if (tieneSubespecialidad === true && !form.subespecialidad.trim()) fields.push("subespecialidad");
       if (fields.length)
         return {
           message: "Por favor completa los campos obligatorios marcados.",
@@ -267,59 +283,28 @@ export default function Form({ onStepChange }: FormProps) {
       if (!form.telefono.trim()) fields.push("telefono");
       if (!form.whatsapp.trim()) fields.push("whatsapp");
       if (!form.direccionConsultorio.trim()) fields.push("direccionConsultorio");
+      const sitio = form.sitioWeb.trim();
+      if (sitio) {
+        try {
+          const u = new URL(sitio);
+          if (!/^https?:$/i.test(u.protocol)) fields.push("sitioWeb");
+        } catch {
+          fields.push("sitioWeb");
+        }
+      }
       if (fields.length)
         return {
-          message: "Por favor completa los campos obligatorios marcados.",
+          message: fields.includes("sitioWeb")
+            ? "El sitio web debe ser una URL válida (por ejemplo https://www.ejemplo.com) o deja el campo vacío si no tienes."
+            : "Por favor completa los campos obligatorios marcados.",
           fields
         };
       return { message: null, fields: [] };
     }
     if (s === 3) {
-      const fields: string[] = [];
-      form.logoImagenes.forEach((img, idx) => {
-        if (img.fileName && !img.note.trim()) {
-          fields.push(`logoImagenes_${idx}`);
-        }
-      });
-      if (fields.length)
-        return {
-          message:
-            "Por favor cuéntanos qué quieres que tomemos de cada imagen de referencia del logo.",
-          fields
-        };
       return { message: null, fields: [] };
     }
-    if (s === 5) {
-      const fields: string[] = [];
-      if (!form.recetaTelefono.trim()) fields.push("recetaTelefono");
-      if (!form.recetaDireccion.trim()) fields.push("recetaDireccion");
-      form.recetaImagenes.forEach((img, idx) => {
-        if (img.fileName && !img.note.trim()) {
-          fields.push(`recetaImagenes_${idx}`);
-        }
-      });
-      if (fields.length)
-        return {
-          message:
-            "Por favor completa los campos obligatorios marcados y las notas de las imágenes de referencia de receta.",
-          fields
-        };
-      return { message: null, fields: [] };
-    }
-    if (s === 6) {
-      const fields: string[] = [];
-      if (!form.tarjetaTituloProfesional.trim()) fields.push("tarjetaTituloProfesional");
-      form.tarjetaImagenes.forEach((img, idx) => {
-        if (img.fileName && !img.note.trim()) {
-          fields.push(`tarjetaImagenes_${idx}`);
-        }
-      });
-      if (fields.length)
-        return {
-          message:
-            "Por favor completa los campos obligatorios marcados y las notas de las imágenes de referencia de tarjeta.",
-          fields
-        };
+    if (s === 4 || s === 5) {
       return { message: null, fields: [] };
     }
     return { message: null, fields: [] };
@@ -626,6 +611,33 @@ export default function Form({ onStepChange }: FormProps) {
             />
           </div>
           <div>
+            <label className={labelClass} htmlFor="tieneSubespecialidad">
+              ¿Tienes subespecialidad?
+            </label>
+            <select
+              id="tieneSubespecialidad"
+              className={inputClassWithInvalid("tieneSubespecialidad")}
+              value={tieneSubespecialidad === null ? "" : tieneSubespecialidad ? "si" : "no"}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "si") {
+                  setTieneSubespecialidad(true);
+                  setForm((prev) => ({ ...prev, subespecialidad: "" }));
+                } else if (v === "no") {
+                  setTieneSubespecialidad(false);
+                  setForm((prev) => ({ ...prev, subespecialidad: "No tengo" }));
+                } else {
+                  setTieneSubespecialidad(null);
+                }
+              }}
+            >
+              <option value="">Selecciona</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          {tieneSubespecialidad === true && (
+          <div>
             <label className={labelClass} htmlFor="subespecialidad">
               Subespecialidad *
             </label>
@@ -635,10 +647,11 @@ export default function Form({ onStepChange }: FormProps) {
               className={inputClassWithInvalid("subespecialidad")}
               value={form.subespecialidad}
               onChange={handleChange}
-              placeholder='Ej: No tengo'
+              placeholder="Ej: Cirugía plástica"
               required
             />
           </div>
+          )}
           <div>
             <label className={labelClass} htmlFor="cedulaProfesional">
               Cédula profesional
@@ -664,6 +677,32 @@ export default function Form({ onStepChange }: FormProps) {
             />
           </div>
           <div>
+            <label className={labelClass} htmlFor="mostrarNombreClinica">
+              ¿Debe aparecer el nombre de una clínica en el diseño?
+            </label>
+            <select
+              id="mostrarNombreClinica"
+              className={inputClass}
+              value={mostrarNombreClinica === null ? "" : mostrarNombreClinica ? "si" : "no"}
+              onChange={(e) => {
+                const v = e.target.value;
+                if (v === "si") {
+                  setMostrarNombreClinica(true);
+                } else if (v === "no") {
+                  setMostrarNombreClinica(false);
+                  setForm((prev) => ({ ...prev, nombreClinica: "", logoTipo: prev.logoTipo === "nombre_clinica" ? "nombre_completo" : prev.logoTipo }));
+                } else {
+                  setMostrarNombreClinica(null);
+                }
+              }}
+            >
+              <option value="">Selecciona</option>
+              <option value="si">Sí</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          {mostrarNombreClinica === true && (
+          <div>
             <label className={labelClass} htmlFor="nombreClinica">
               Nombre de la clínica o consultorio
             </label>
@@ -675,6 +714,7 @@ export default function Form({ onStepChange }: FormProps) {
               onChange={handleChange}
             />
           </div>
+          )}
         </div>
       </section>
       )}
@@ -740,10 +780,21 @@ export default function Form({ onStepChange }: FormProps) {
             <input
               id="sitioWeb"
               name="sitioWeb"
-              className={inputClass}
+              type="url"
+              className={inputClassWithInvalid("sitioWeb")}
               value={form.sitioWeb}
               onChange={handleChange}
+              placeholder="https://www.ejemplo.com (o deja vacío si no tienes)"
             />
+            <p className="mt-1 text-xs text-slate-500">
+              <button
+                type="button"
+                onClick={() => setForm((prev) => ({ ...prev, sitioWeb: "" }))}
+                className="text-[#6556F2] hover:underline focus:outline-none"
+              >
+                No tengo sitio web
+              </button>
+            </p>
           </div>
           <div className="md:col-span-2">
             <label className={labelClass} htmlFor="direccionConsultorio">
@@ -784,7 +835,7 @@ export default function Form({ onStepChange }: FormProps) {
           </div>
         </div>
 
-        <div className="mt-4 grid md:grid-cols-3 gap-4">
+        <div className="mt-4 grid md:grid-cols-2 gap-4">
           <div>
             <label className={labelClass} htmlFor="instagram">
               Instagram
@@ -807,18 +858,6 @@ export default function Form({ onStepChange }: FormProps) {
               name="facebook"
               className={inputClass}
               value={form.facebook}
-              onChange={handleChange}
-            />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="linkedin">
-              LinkedIn
-            </label>
-            <input
-              id="linkedin"
-              name="linkedin"
-              className={inputClass}
-              value={form.linkedin}
               onChange={handleChange}
             />
           </div>
@@ -859,6 +898,7 @@ export default function Form({ onStepChange }: FormProps) {
               />
               <span>Iniciales</span>
             </label>
+            {mostrarNombreClinica === true && (
             <label className="inline-flex items-center gap-2">
               <input
                 type="radio"
@@ -870,6 +910,7 @@ export default function Form({ onStepChange }: FormProps) {
               />
               <span>Nombre de clínica</span>
             </label>
+            )}
           </div>
         </div>
 
@@ -884,6 +925,7 @@ export default function Form({ onStepChange }: FormProps) {
               className={textareaClass}
               value={form.simbolos}
               onChange={handleChange}
+              placeholder="Caduceo, Cruz médica, Corazón, Columna vertebral, espirales tipo ADN, etc."
             />
           </div>
           <div className="space-y-4">
@@ -972,144 +1014,14 @@ export default function Form({ onStepChange }: FormProps) {
           </div>
         </div>
 
-        <div className="mt-6 space-y-3">
-          <label className={labelClass} htmlFor="logoImagenes">
-            Imágenes de referencia para el logo
-          </label>
-          <input
-            id="logoImagenes"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleLogoFiles}
-            className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-          />
-          {form.logoImagenes.length > 0 && (
-            <div className="space-y-3">
-              {form.logoImagenes.map((img, idx) => (
-                <div
-                  key={img.fileName + idx}
-                  className="border border-slate-200 rounded-lg p-3 space-y-2"
-                >
-                  <p className="text-xs font-medium text-slate-600 break-all">
-                    {img.fileName}
-                  </p>
-                  <label className="text-xs text-slate-600">
-                    ¿Qué quieres que tomemos de esta referencia?
-                  </label>
-                  <textarea
-                    className={textareaClassWithInvalid(
-                      `logoImagenes_${idx}`
-                    )}
-                    value={img.note}
-                    onChange={(e) =>
-                      handleLogoNoteChange(idx, e.target.value)
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+        </section>
       )}
 
       {step === 4 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
-          Sección 4 — Referencias
+          Sección 4 — Información para recetas médicas
         </h2>
-        <label className={labelClass} htmlFor="linksReferencias">
-          Links de logos o marcas que te gusten
-        </label>
-        <textarea
-          id="linksReferencias"
-          name="linksReferencias"
-          className={textareaClass}
-          value={form.linksReferencias}
-          onChange={handleChange}
-          placeholder="Pega aquí enlaces de Instagram, Pinterest, sitios web, etc."
-        />
-      </section>
-      )}
-
-      {step === 5 && (
-      <section className={sectionClass}>
-        <h2 className="text-base md:text-lg font-semibold text-slate-900">
-          Sección 5 — Información para recetas médicas
-        </h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="recetaCedulaProfesional">
-              Cédula profesional
-            </label>
-            <input
-              id="recetaCedulaProfesional"
-              name="recetaCedulaProfesional"
-              className={inputClass}
-              value={form.recetaCedulaProfesional}
-              onChange={handleChange}
-            />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="recetaCedulaEspecialidad">
-              Cédula especialidad
-            </label>
-            <input
-              id="recetaCedulaEspecialidad"
-              name="recetaCedulaEspecialidad"
-              className={inputClass}
-              value={form.recetaCedulaEspecialidad}
-              onChange={handleChange}
-            />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="recetaTelefono">
-              Teléfono *
-            </label>
-            <input
-              id="recetaTelefono"
-              name="recetaTelefono"
-              type="tel"
-              className={inputClassWithInvalid("recetaTelefono")}
-              value={form.recetaTelefono}
-              onChange={handleChange}
-              placeholder="+52 55 1234 5678"
-              pattern="^\\+[0-9\\s\\-()]{7,20}$"
-              title="Incluye el código de país, por ejemplo: +52 55 1234 5678"
-              required
-            />
-          </div>
-          <div>
-            <label className={labelClass} htmlFor="recetaDireccion">
-              Dirección *
-            </label>
-            <input
-              id="recetaDireccion"
-              name="recetaDireccion"
-              className={inputClassWithInvalid("recetaDireccion")}
-              value={form.recetaDireccion}
-              onChange={handleChange}
-              required
-            />
-          </div>
-          <div className="md:col-span-2">
-            <label className={labelClass} htmlFor="recetaMarcaDeAgua">
-              Con marca de agua
-            </label>
-            <select
-              id="recetaMarcaDeAgua"
-              name="recetaMarcaDeAgua"
-              className={inputClass}
-              value={form.recetaMarcaDeAgua ? "si" : "no"}
-              onChange={(e) => setForm((prev) => ({ ...prev, recetaMarcaDeAgua: e.target.value === "si" }))}
-            >
-              <option value="si">Sí</option>
-              <option value="no">No</option>
-            </select>
-          </div>
-        </div>
-
         <div className="mt-4">
           <label className={labelClass} htmlFor="recetaCamposPersonalizados">
             ¿Qué campos a completar quieres que aparezcan en la receta?
@@ -1124,69 +1036,14 @@ export default function Form({ onStepChange }: FormProps) {
             rows={3}
           />
         </div>
-
-        <div className="mt-6 space-y-3">
-          <label className={labelClass} htmlFor="recetaImagenes">
-            Imágenes de referencia para la receta
-          </label>
-          <input
-            id="recetaImagenes"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleRecetaFiles}
-            className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-          />
-          {form.recetaImagenes.length > 0 && (
-            <div className="space-y-3">
-              {form.recetaImagenes.map((img, idx) => (
-                <div
-                  key={img.fileName + idx}
-                  className="border border-slate-200 rounded-lg p-3 space-y-2"
-                >
-                  <p className="text-xs font-medium text-slate-600 break-all">
-                    {img.fileName}
-                  </p>
-                  <label className="text-xs text-slate-600">
-                    ¿Qué quieres que tomemos de esta referencia?
-                  </label>
-                  <textarea
-                    className={textareaClassWithInvalid(
-                      `recetaImagenes_${idx}`
-                    )}
-                    value={img.note}
-                    onChange={(e) =>
-                      handleRecetaNoteChange(idx, e.target.value)
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
       </section>
       )}
 
-      {step === 6 && (
+      {step === 5 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
-          Sección 6 — Tarjeta personal
+          Sección 5 — Tarjeta personal
         </h2>
-        <div className="grid md:grid-cols-2 gap-4">
-          <div>
-            <label className={labelClass} htmlFor="tarjetaTituloProfesional">
-              Título profesional *
-            </label>
-            <input
-              id="tarjetaTituloProfesional"
-              name="tarjetaTituloProfesional"
-              className={inputClassWithInvalid("tarjetaTituloProfesional")}
-              value={form.tarjetaTituloProfesional}
-              onChange={handleChange}
-              required
-            />
-          </div>
-        </div>
         <div className="mt-4">
           <label className={labelClass} htmlFor="tarjetaInfoExtra">
             Información adicional a incluir
@@ -1199,120 +1056,13 @@ export default function Form({ onStepChange }: FormProps) {
             onChange={handleChange}
           />
         </div>
-        <div className="mt-4">
-          <p className="text-sm font-medium text-slate-700 mb-2">
-            ¿Qué información te gustaría que aparezca en la tarjeta?
-          </p>
-          <div className="grid md:grid-cols-3 gap-2 text-sm">
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="tarjetaTel"
-                checked={form.tarjetaTel}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
-              />
-              <span>Teléfono</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="tarjetaWhatsapp"
-                checked={form.tarjetaWhatsapp}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
-              />
-              <span>WhatsApp</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="tarjetaEmail"
-                checked={form.tarjetaEmail}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
-              />
-              <span>Email</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="tarjetaDireccion"
-                checked={form.tarjetaDireccion}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
-              />
-              <span>Dirección</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="tarjetaRedes"
-                checked={form.tarjetaRedes}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
-              />
-              <span>Redes sociales</span>
-            </label>
-            <label className="inline-flex items-center gap-2">
-              <input
-                type="checkbox"
-                name="tarjetaQR"
-                checked={form.tarjetaQR}
-                onChange={handleChange}
-                className="rounded border-slate-300 text-[#6556F2] focus:ring-[#6556F2]"
-              />
-              <span>QR</span>
-            </label>
-          </div>
-        </div>
-
-        <div className="mt-6 space-y-3">
-          <label className={labelClass} htmlFor="tarjetaImagenes">
-            Imágenes de referencia para la tarjeta
-          </label>
-          <input
-            id="tarjetaImagenes"
-            type="file"
-            accept="image/*"
-            multiple
-            onChange={handleTarjetaFiles}
-            className="block w-full text-sm text-slate-600 file:mr-3 file:py-2 file:px-3 file:rounded-md file:border-0 file:bg-slate-100 file:text-slate-700 hover:file:bg-slate-200"
-          />
-          {form.tarjetaImagenes.length > 0 && (
-            <div className="space-y-3">
-              {form.tarjetaImagenes.map((img, idx) => (
-                <div
-                  key={img.fileName + idx}
-                  className="border border-slate-200 rounded-lg p-3 space-y-2"
-                >
-                  <p className="text-xs font-medium text-slate-600 break-all">
-                    {img.fileName}
-                  </p>
-                  <label className="text-xs text-slate-600">
-                    ¿Qué quieres que tomemos de esta referencia?
-                  </label>
-                  <textarea
-                    className={textareaClassWithInvalid(
-                      `tarjetaImagenes_${idx}`
-                    )}
-                    value={img.note}
-                    onChange={(e) =>
-                      handleTarjetaNoteChange(idx, e.target.value)
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          )}
-        </div>
-      </section>
+        </section>
       )}
 
-      {step === 7 && (
+      {step === 6 && (
       <section className={sectionClass}>
         <h2 className="text-base md:text-lg font-semibold text-slate-900">
-          Sección 7 — Detalles de diseño
+          Sección 6 — Detalles de diseño
         </h2>
         <div>
           <label className={labelClass} htmlFor="comentariosAdicionales">
