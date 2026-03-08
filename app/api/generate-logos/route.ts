@@ -174,7 +174,9 @@ export async function POST(req: Request) {
 
     const ai = new GoogleGenAI({ apiKey: geminiKey });
     const logoUrls: string[] = [];
-    const variantIndices = append ? [4, 5, 6, 7] : [0, 1, 2, 3];
+    // Al hacer append, usar índices siguientes para no sobrescribir (paths únicos por lote)
+    const baseIndex = append ? existingUrls.length / 2 : 0;
+    const variantIndices = [baseIndex, baseIndex + 1, baseIndex + 2, baseIndex + 3];
 
     const promptsSent: string[] = [];
 
@@ -183,7 +185,7 @@ export async function POST(req: Request) {
     let rateLimitHit = false;
 
     const getImagotipoPrompt = (variantIndex: number) => {
-      const hint = append && variantIndex >= 4 ? APPEND_VARIATION_HINTS[variantIndex - 4] : undefined;
+      const hint = append ? APPEND_VARIATION_HINTS[variantIndex % APPEND_VARIATION_HINTS.length] : undefined;
       return buildLogoPromptForVariant(form, "imagotipo", hint);
     };
     const imagotipoPrompt = getImagotipoPrompt(variantIndices[0]!);
@@ -192,7 +194,7 @@ export async function POST(req: Request) {
     const generateImagotipo = async (variantIndex: number): Promise<{ url: string; bytes: string } | null> => {
       const path = `${formId}/${2 * variantIndex + 1}.png`;
       const prompt = getImagotipoPrompt(variantIndex);
-      console.log("[generate-logos] Prompt imagotipo " + (variantIndex + 1) + (append && variantIndex >= 4 ? " (variación nueva)" : "") + "...");
+      console.log("[generate-logos] Prompt imagotipo " + (variantIndex + 1) + (append ? " (variación nueva)" : "") + "...");
       let bytes: string | undefined;
       try {
         if (isGeminiFlashImageModel(model)) {
