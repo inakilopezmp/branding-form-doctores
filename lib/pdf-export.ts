@@ -64,7 +64,7 @@ export async function buildTarjetaPdf(
   // Página 1: anverso — solo logo centrado
   doc.addImage(isotipoDataUrl, "PNG", 5, 5, CARD_W_MM - 10, CARD_H_MM - 10, undefined, "FAST");
 
-  // Página 2: reverso — texto editable
+  // Página 2: reverso — texto editable (Helvetica; fuentes custom fallan con jsPDF en este TTF)
   doc.addPage([CARD_W_MM, CARD_H_MM]);
   const margin = 4;
   let y = 10;
@@ -145,16 +145,18 @@ export async function buildRecetaPdf(
   const accent = parseAccentColor(form.coloresPreferidos);
   const [r, g, b] = hexToRgb(accent);
   const margin = 10;
+  const centerX = w / 2;
   let y = margin;
 
-  // Logo en cabecera
-  doc.addImage(isotipoDataUrl, "PNG", margin, y, 25, 25, undefined, "FAST");
-  y += 28;
+  // Logo centrado en cabecera (como en la vista)
+  const logoSize = 22;
+  doc.addImage(isotipoDataUrl, "PNG", centerX - logoSize / 2, y, logoSize, logoSize, undefined, "FAST");
+  y += logoSize + 4;
 
   const nombreReceta = `${form.tituloAbreviado || "Dr."} ${form.nombreCompleto || ""}`.trim();
   doc.setFontSize(12);
   doc.setFont("helvetica", "bold");
-  doc.text(nombreReceta.toUpperCase(), margin, y);
+  doc.text(nombreReceta.toUpperCase(), centerX, y, { align: "center" });
   y += 6;
   doc.setFontSize(9);
   doc.setFont("helvetica", "normal");
@@ -162,15 +164,15 @@ export async function buildRecetaPdf(
   const sub = (form.subespecialidad || "").trim();
   const subOk = sub && sub.toLowerCase() !== "no tengo";
   if (esp || subOk) {
-    doc.text(esp + (esp && subOk ? " | " : "") + (subOk ? sub : ""), margin, y);
+    doc.text(esp + (esp && subOk ? " | " : "") + (subOk ? sub : ""), centerX, y, { align: "center" });
     y += 5;
   }
   if (form.recetaCedulaProfesional || form.cedulaProfesional) {
-    doc.text("CÉDULA PROFESIONAL: " + (form.recetaCedulaProfesional || form.cedulaProfesional), margin, y);
+    doc.text("CÉDULA PROFESIONAL: " + (form.recetaCedulaProfesional || form.cedulaProfesional), centerX, y, { align: "center" });
     y += 5;
   }
   if (form.recetaCedulaEspecialidad?.trim() || form.cedulaEspecialidad?.trim()) {
-    doc.text("CÉDULA ESPECIALIDAD: " + (form.recetaCedulaEspecialidad || form.cedulaEspecialidad), margin, y);
+    doc.text("CÉDULA ESPECIALIDAD: " + (form.recetaCedulaEspecialidad || form.cedulaEspecialidad), centerX, y, { align: "center" });
     y += 5;
   }
   y += 3;
@@ -179,27 +181,22 @@ export async function buildRecetaPdf(
   doc.line(margin, y, w - margin, y);
   y += 8;
 
+  // Campos: primera línea solo Fecha (como en la vista); luego lineales en filas de 4
   const lineales = getCamposLineales(form);
   doc.setFontSize(8);
   doc.setTextColor(80, 80, 80);
   doc.text("Fecha: _________________________", margin, y);
   y += 6;
   doc.setTextColor(0, 0, 0);
-  const colWidth = (w - 2 * margin - 15) / 4;
-  for (let i = 0; i < Math.min(lineales.length, 8); i += 4) {
+  const colWidth = (w - 2 * margin) / 4;
+  for (let i = 0; i < lineales.length; i += 4) {
     const row = lineales.slice(i, i + 4);
     for (let j = 0; j < row.length; j++) {
-      doc.text(row[j] + ": ________", margin + j * (colWidth + 2), y);
+      doc.text(row[j] + ": ________", margin + j * colWidth, y);
     }
     y += 5;
   }
-  if (lineales.length > 8) {
-    for (let i = 8; i < lineales.length; i++) {
-      doc.text(lineales[i] + ": ________", margin, y);
-      y += 5;
-    }
-  }
-  y += 3;
+  y += 4;
   if (hasDiagnostico(form)) {
     doc.setTextColor(100, 100, 100);
     doc.text("Diagnóstico:", margin, y);
@@ -218,11 +215,16 @@ export async function buildRecetaPdf(
     doc.rect(margin, y, w - 2 * margin, 35);
     y += 40;
   }
-  y += 5;
-  doc.setFontSize(7);
-  doc.text("Firma: _________________________", w - margin - 50, y);
 
-  // Pie con contacto
+  // Firma abajo a la derecha (como en la vista: absolute bottom-4 right-6)
+  const firmaY = h - 20;
+  doc.setDrawColor(120, 120, 120);
+  doc.line(w - margin - 45, firmaY, w - margin, firmaY);
+  doc.setFontSize(7);
+  doc.setTextColor(100, 100, 100);
+  doc.text("Firma", w - margin - 22, firmaY + 4, { align: "center" });
+
+  // Pie con contacto (orden: teléfono, dirección, email; centrado en la barra)
   doc.setFillColor(r, g, b);
   doc.rect(0, h - 12, w, 12, "F");
   doc.setTextColor(255, 255, 255);
@@ -231,7 +233,7 @@ export async function buildRecetaPdf(
   const dir = form.recetaDireccion || form.direccionConsultorio || "";
   const mail = form.email || "";
   const pie = [tel, dir, mail].filter(Boolean).join("  ·  ");
-  doc.text(pie, margin, h - 5);
+  doc.text(pie, centerX, h - 5, { align: "center" });
 
   return doc.output("blob");
 }

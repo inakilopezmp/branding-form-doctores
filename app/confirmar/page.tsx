@@ -717,7 +717,7 @@ function ConfirmarContent() {
                     try {
                       setDownloading("tarjeta");
                       const JSZip = (await import("jszip")).default;
-                      const { imageUrlToDataUrl, buildTarjetaPdf, buildRecetaPdf } = await import("../../lib/pdf-export");
+                      const { imageUrlToDataUrl } = await import("../../lib/pdf-export");
                       const zip = new JSZip();
                       let isotipoDataUrl: string;
                       let imagotipoDataUrl: string;
@@ -731,25 +731,39 @@ function ConfirmarContent() {
                         return;
                       }
                       try {
-                        const blobCard = await buildTarjetaPdf(formData as import("../../lib/pdf-export").PdfFormData, isotipoDataUrl);
-                        zip.file(`${baseName}Tarjeta Personal.pdf`, blobCard);
+                        const resTarjeta = await fetch("/api/tarjeta-pdf", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({ formData, isotipoDataUrl })
+                        });
+                        if (resTarjeta.ok) {
+                          const blobCard = await resTarjeta.blob();
+                          zip.file(`${baseName}Tarjeta Personal.pdf`, blobCard);
+                        }
                       } catch (e) {
                         console.error("Tarjeta PDF:", e);
                       }
                       setDownloading("receta");
                       try {
-                        const blobReceta = await buildRecetaPdf(
-                          formData as import("../../lib/pdf-export").PdfFormData,
-                          {
-                            variacion: recetaVariacion,
-                            formato: recetaFormato,
-                            orientacion: recetaOrientacion,
-                            mostrarMarcaDeAgua: recetaMostrarMarcaDeAgua
-                          },
-                          isotipoDataUrl,
-                          imagotipoDataUrl
-                        );
-                        zip.file(`${baseName}Receta.pdf`, blobReceta);
+                        const resReceta = await fetch("/api/receta-pdf", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            formData,
+                            options: {
+                              variacion: recetaVariacion,
+                              formato: recetaFormato,
+                              orientacion: recetaOrientacion,
+                              mostrarMarcaDeAgua: recetaMostrarMarcaDeAgua
+                            },
+                            isotipoDataUrl,
+                            imagotipoDataUrl
+                          })
+                        });
+                        if (resReceta.ok) {
+                          const blobReceta = await resReceta.blob();
+                          zip.file(`${baseName}Receta.pdf`, blobReceta);
+                        }
                       } catch (e) {
                         console.error("Receta PDF:", e);
                       }
