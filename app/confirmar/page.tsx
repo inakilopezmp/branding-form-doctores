@@ -369,13 +369,13 @@ function ConfirmarContent() {
                     </button>
                   )}
                 </div>
-                <div className="flex flex-wrap justify-center gap-3">
+                <div className={`grid gap-3 justify-center ${imagotipos.length > 4 ? "grid-cols-4" : "grid-cols-2"}`}>
                   {imagotipos.map((_, i) => (
                     <button
                       key={i}
                       type="button"
                       onClick={() => setSelectedLogoIndex(i)}
-                      className={`block rounded-xl border-2 overflow-hidden bg-slate-50 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6556F2] ${
+                      className={`block w-full aspect-square rounded-xl border-2 overflow-hidden bg-slate-50 transition-all focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-[#6556F2] ${
                         selectedLogoIndex === i
                           ? "border-[#6556F2] ring-2 ring-[#6556F2] ring-offset-2"
                           : "border-slate-200 hover:border-slate-300"
@@ -384,7 +384,7 @@ function ConfirmarContent() {
                       <img
                         src={isotiposForSelector ? isotiposForSelector[i]! : imagotipos[i]}
                         alt={`Logo ${i + 1}`}
-                        className="h-48 w-auto object-contain pointer-events-none"
+                        className="w-full h-full object-contain pointer-events-none"
                       />
                     </button>
                   ))}
