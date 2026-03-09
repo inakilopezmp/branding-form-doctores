@@ -125,6 +125,8 @@ function ConfirmarContent() {
   const recetaRef = useRef<HTMLDivElement>(null);
   const [loadingMessageIndex, setLoadingMessageIndex] = useState(0);
   const [loadingProgress, setLoadingProgress] = useState(0);
+  const [preferenciasNuevosLogos, setPreferenciasNuevosLogos] = useState("");
+  const [showPreferenciasNuevosLogos, setShowPreferenciasNuevosLogos] = useState(false);
 
   const LOADING_MESSAGES = [
     "Recopilando tus respuestas",
@@ -299,36 +301,73 @@ function ConfirmarContent() {
                   <p className="text-sm font-medium text-slate-700 w-full text-center">
                     Selecciona el logo que te guste
                   </p>
-                  <button
-                    type="button"
-                    disabled={regeneratingLogos}
-                    onClick={async () => {
-                      if (!formId || !logoUrls?.length) return;
-                      regeneratingMinCountRef.current = logoUrls.length + 1;
-                      setLoadingProgress(0);
-                      setRegeneratingLogos(true);
-                      try {
-                        const dataRes = await fetch("/api/form-data?formId=" + encodeURIComponent(formId));
-                        const data = await dataRes.json().catch(() => null);
-                        if (!data?.success || !data?.form) {
-                          regeneratingMinCountRef.current = null;
-                          setRegeneratingLogos(false);
-                          return;
-                        }
-                        await fetch("/api/generate-logos", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify({ formId, form: data.form, append: true })
-                        });
-                        setPollLogosKey((k) => k + 1);
-                      } catch {
-                        setRegeneratingLogos(false);
-                      }
-                    }}
-                    className="text-sm text-[#6556F2] hover:underline disabled:opacity-60"
-                  >
-                    {regeneratingLogos ? "Generando…" : "Generar nuevos logos"}
-                  </button>
+                  {regeneratingLogos ? null : showPreferenciasNuevosLogos ? (
+                    <div className="w-full max-w-md space-y-3">
+                      <label htmlFor="preferencias-nuevos-logos" className="block text-sm text-slate-600 text-center">
+                        ¿Cómo te gustaría que fueran los nuevos logos? (opcional)
+                      </label>
+                      <textarea
+                        id="preferencias-nuevos-logos"
+                        value={preferenciasNuevosLogos}
+                        onChange={(e) => setPreferenciasNuevosLogos(e.target.value)}
+                        placeholder="Ej: más minimalista, con un corazón, colores más suaves..."
+                        rows={2}
+                        className="w-full rounded-lg border border-slate-300 px-3 py-2 text-sm text-slate-800 placeholder:text-slate-400 focus:border-[#6556F2] focus:outline-none focus:ring-1 focus:ring-[#6556F2]"
+                      />
+                      <div className="flex items-center justify-center gap-2">
+                        <button
+                          type="button"
+                          onClick={async () => {
+                            if (!formId || !logoUrls?.length) return;
+                            regeneratingMinCountRef.current = logoUrls.length + 1;
+                            setLoadingProgress(0);
+                            setShowPreferenciasNuevosLogos(false);
+                            setRegeneratingLogos(true);
+                            try {
+                              const dataRes = await fetch("/api/form-data?formId=" + encodeURIComponent(formId));
+                              const data = await dataRes.json().catch(() => null);
+                              if (!data?.success || !data?.form) {
+                                regeneratingMinCountRef.current = null;
+                                setRegeneratingLogos(false);
+                                return;
+                              }
+                              await fetch("/api/generate-logos", {
+                                method: "POST",
+                                headers: { "Content-Type": "application/json" },
+                                body: JSON.stringify({
+                                  formId,
+                                  form: data.form,
+                                  append: true,
+                                  preferenciasNuevosLogos: preferenciasNuevosLogos.trim() || undefined
+                                })
+                              });
+                              setPollLogosKey((k) => k + 1);
+                            } catch {
+                              setRegeneratingLogos(false);
+                            }
+                          }}
+                          className="rounded-lg bg-[#6556F2] px-4 py-2 text-sm font-medium text-white hover:bg-[#5447d9] focus:outline-none focus:ring-2 focus:ring-[#6556F2] focus:ring-offset-2"
+                        >
+                          Generar
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setShowPreferenciasNuevosLogos(false)}
+                          className="text-sm text-slate-500 hover:text-slate-700"
+                        >
+                          Cancelar
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => setShowPreferenciasNuevosLogos(true)}
+                      className="text-sm text-[#6556F2] hover:underline"
+                    >
+                      Generar nuevos logos
+                    </button>
+                  )}
                 </div>
                 <div className="flex flex-wrap justify-center gap-3">
                   {imagotipos.map((_, i) => (

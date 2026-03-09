@@ -49,7 +49,7 @@ const APPEND_VARIATION_HINTS = [
   "Variación distinta: estilo corporativo serio, símbolo abstracto o geométrico (círculos, líneas)."
 ];
 
-function buildLogoPromptForVariant(form: FormPayload, variant: LogoVariant, variationHint?: string): string {
+function buildLogoPromptForVariant(form: FormPayload, variant: LogoVariant, variationHint?: string, userHint?: string): string {
   const nombreCompleto = form.nombreCompleto?.trim() || "Médico";
   const titulo = (form.tituloAbreviado?.trim() || "Dr.").trim();
   const nombreParaMarca = `${titulo} ${nombreCompleto}`.trim();
@@ -100,6 +100,7 @@ Nombre: ${nombreCompleto}. Especialidad: ${especialidad}.
 
 PREFERENCIAS: Forma = símbolo únicamente. Estilo: ${estiloTexto}. ${iconografia}
 COLOR: ${colorBlock}
+${userHint ? `\nPREFERENCIAS DEL USUARIO para este logo: ${userHint}\n` : ""}
 ${reglas}
 
 Generar una sola imagen con únicamente un icono o símbolo médico, centrado en fondo blanco. Sin palabras, sin letras, sin nombre. Un único ícono en color ${colorHex}.`;
@@ -126,6 +127,7 @@ COLORES: ${colorBlock}
 
 ${reglas}
 ${variationHint ? `\nIMPORTANTE - ESTILO DIFERENTE: ${variationHint} El resultado debe verse claramente distinto a otras variantes.\n` : ""}
+${userHint ? `\nPREFERENCIAS DEL USUARIO para este logo: ${userHint}\n` : ""}
 
 Generar una sola imagen con un único logo: símbolo + nombre "${nombreParaMarca}" + especialidad "${especialidad}". Fondo blanco o transparente. Centrado. Sin palabras genéricas ni etiquetas. Sin repetir el logo ni mostrar variantes.`;
 }
@@ -133,7 +135,14 @@ Generar una sola imagen con un único logo: símbolo + nombre "${nombreParaMarca
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const { formId, form, force, append } = body as { formId: string; form: FormPayload; force?: boolean; append?: boolean };
+    const { formId, form, force, append, preferenciasNuevosLogos } = body as {
+      formId: string;
+      form: FormPayload;
+      force?: boolean;
+      append?: boolean;
+      preferenciasNuevosLogos?: string;
+    };
+    const userHint = preferenciasNuevosLogos?.trim() || undefined;
 
     if (!formId || !form) {
       return NextResponse.json(
@@ -186,7 +195,7 @@ export async function POST(req: Request) {
 
     const getImagotipoPrompt = (variantIndex: number) => {
       const hint = append ? APPEND_VARIATION_HINTS[variantIndex % APPEND_VARIATION_HINTS.length] : undefined;
-      return buildLogoPromptForVariant(form, "imagotipo", hint);
+      return buildLogoPromptForVariant(form, "imagotipo", hint, userHint);
     };
     const imagotipoPrompt = getImagotipoPrompt(variantIndices[0]!);
     promptsSent.push(imagotipoPrompt);
@@ -233,13 +242,14 @@ export async function POST(req: Request) {
       return { url: supabase.storage.from(LOGOS_BUCKET).getPublicUrl(path).data.publicUrl, bytes };
     };
 
-    const generateIsotipoFromImage = async (imageBase64: string, variantIndex: number): Promise<string | null> => {
+    const generateIsotipoFromImage = async (imageBase64: string, variantIndex: number, isoUserHint?: string): Promise<string | null> => {
       const path = `${formId}/${2 * variantIndex}.png`;
+      const isoPrompt = isoUserHint ? `${ISOTIPO_FROM_IMAGE_PROMPT}\n\nPREFERENCIAS DEL USUARIO: ${isoUserHint}` : ISOTIPO_FROM_IMAGE_PROMPT;
       console.log("[generate-logos] Isotipo desde imagotipo " + (variantIndex + 1) + " (2A-2D)...");
       try {
         const gcResponse = await ai.models.generateContent({
           model,
-          contents: [{ parts: [{ inlineData: { mimeType: "image/png", data: imageBase64 } }, { text: ISOTIPO_FROM_IMAGE_PROMPT }] }],
+          contents: [{ parts: [{ inlineData: { mimeType: "image/png", data: imageBase64 } }, { text: isoPrompt }] }],
           config: { responseModalities: ["IMAGE"] }
         });
         const part = gcResponse.candidates?.[0]?.content?.parts?.find((p) => p.inlineData?.data);
@@ -275,7 +285,7 @@ export async function POST(req: Request) {
     if (!rateLimitHit && isGeminiFlashImageModel(model)) {
       promptsSent.push(ISOTIPO_FROM_IMAGE_PROMPT);
       phase2Results = await Promise.all(
-        phase1Results.map((r, i) => (r?.bytes ? generateIsotipoFromImage(r.bytes, variantIndices[i]!) : Promise.resolve(null)))
+        phase1Results.map((r, i) => (r?.bytes ? generateIsotipoFromImage(r.bytes, variantIndices[i]!, userHint) : Promise.resolve(null)))
       );
     }
 
