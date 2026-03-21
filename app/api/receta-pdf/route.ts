@@ -76,10 +76,6 @@ function buildRecetaHtml(
   const dir = form.recetaDireccion || form.direccionConsultorio || "—";
   const mail = form.email || "—";
 
-  const linealesRow1 = lineales.slice(0, 4);
-  const linealesRow2 = lineales.slice(4, 8);
-  const linealesRow3 = lineales.slice(8);
-
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -100,15 +96,12 @@ function buildRecetaHtml(
     .watermark { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; pointer-events: none; overflow: hidden; opacity: 0.07; }
     .watermark img { max-width: min(80%, 700px); max-height: 70%; object-fit: contain; }
     .content { position: relative; font-size: 12px; color: #334155; flex: 1; }
-    .grid4 { display: grid; grid-template-columns: repeat(4, 1fr); gap: 4px 16px; margin-bottom: 12px; }
-    .grid4 .label { color: #64748b; }
-    .grid4 .dotted { border-bottom: 1px dotted #cbd5e1; min-width: 50px; display: inline-block; vertical-align: baseline; }
-    .grid4 .dotted-fecha { min-width: 80px; flex: 1; }
-    .grid4 .cell-fecha { display: flex; align-items: baseline; gap: 8px; flex-wrap: nowrap; }
-    .grid4 .cell-fecha .dotted { flex: 1; min-width: 80px; }
-    .grid7 { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px 8px; margin-bottom: 12px; }
-    .grid7 .label { color: #64748b; }
-    .grid7 .dotted { border-bottom: 1px dotted #cbd5e1; min-width: 28px; display: inline-block; vertical-align: baseline; }
+    .campos-wrap { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px 16px; margin-bottom: 12px; }
+    .campo { display: inline-flex; align-items: baseline; gap: 6px; white-space: nowrap; }
+    .campo .label { color: #64748b; }
+    .campo .dotted { border-bottom: 1px dotted #cbd5e1; min-width: 80px; display: inline-block; }
+    .campo-fecha { flex: 1 1 170px; min-width: 170px; }
+    .campo-fecha .dotted { flex: 1; min-width: 56px; }
     .diagnostico, .tratamiento { margin-top: 12px; }
     .diagnostico p, .tratamiento p { color: #64748b; margin: 0 0 4px; font-size: 0.85rem; }
     .diagnostico .dotted { border-bottom: 1px dotted #cbd5e1; min-height: 1.5em; width: 100%; display: block; }
@@ -134,12 +127,10 @@ function buildRecetaHtml(
     <div class="body">
       ${options.mostrarMarcaDeAgua ? `<div class="watermark"><img src="${imagotipoDataUrl.replace(/"/g, "&quot;")}" alt="" /></div>` : ""}
       <div class="content">
-        <div class="grid4">
-          <div class="cell-fecha"><span class="label">Fecha:</span><span class="dotted dotted-fecha"></span></div>
+        <div class="campos-wrap">
+          <div class="campo campo-fecha"><span class="label">Fecha:</span><span class="dotted"></span></div>
+          ${lineales.map((l) => `<div class="campo"><span class="label">${l}:</span><span class="dotted" style="min-width:${/nombre/i.test(l) ? 170 : 80}px"></span></div>`).join("")}
         </div>
-        ${linealesRow1.length ? `<div class="grid4">${linealesRow1.map((l) => `<div><span class="label">${l}:</span> <span class="dotted"></span></div>`).join("")}</div>` : ""}
-        ${linealesRow2.length ? `<div class="grid4">${linealesRow2.map((l) => `<div><span class="label">${l}:</span> <span class="dotted"></span></div>`).join("")}</div>` : ""}
-        ${linealesRow3.length ? `<div class="grid7">${linealesRow3.map((l) => `<div><span class="label">${l}</span> <span class="dotted"></span></div>`).join("")}</div>` : ""}
         ${tieneDiagnostico ? `<div class="diagnostico"><p>Diagnóstico:</p><span class="dotted"></span></div>` : ""}
         ${tieneTratamiento ? `<div class="tratamiento"><p>Tratamiento:</p><div class="box"></div></div>` : ""}
       </div>

@@ -296,7 +296,7 @@ function ConfirmarContent() {
                   ? logoUrls[selectedLogoIndex! + 1]
                   : logoUrls[selectedLogoIndex!];
               return (
-              <div className="space-y-3">
+              <div className="space-y-3 w-full max-w-[432px] mx-auto">
                 <div className="flex flex-wrap items-center justify-center gap-3">
                   <p className="text-sm font-medium text-slate-700 w-full text-center">
                     Selecciona el logo que te guste
@@ -369,7 +369,7 @@ function ConfirmarContent() {
                     </button>
                   )}
                 </div>
-                <div className="grid gap-3 justify-center grid-cols-2">
+                <div className="grid gap-3 justify-center grid-cols-2 w-full">
                   {imagotipos.map((_, i) => (
                     <button
                       key={i}
@@ -604,30 +604,20 @@ function ConfirmarContent() {
                               const tieneTratamiento = campos.some((c) => /^tratamiento$/i.test(c));
                               return (
                                 <>
-                                  <div className="grid grid-cols-4 gap-x-4 gap-y-1 text-left">
-                                    <div className="flex items-baseline gap-1 whitespace-nowrap"><span className="text-slate-500">Fecha:</span><span className="border-b border-slate-300 border-dotted inline-block min-w-[80px] align-baseline flex-1 shrink-0" /></div>
+                                  <div className="flex flex-wrap items-baseline gap-x-4 gap-y-2 text-left">
+                                    <div className="inline-flex items-baseline gap-1 whitespace-nowrap min-w-[170px] flex-1">
+                                      <span className="text-slate-500">Fecha:</span>
+                                      <span className="border-b border-slate-300 border-dotted inline-block min-w-[56px] align-baseline flex-1 shrink-0" />
+                                    </div>
+                                    {lineales.map((l) => (
+                                      <div key={l} className="inline-flex items-baseline gap-1 whitespace-nowrap">
+                                        <span className="text-slate-500">{l}:</span>
+                                        <span
+                                          className={`border-b border-slate-300 border-dotted inline-block align-baseline ${/nombre/i.test(l) ? "min-w-[170px]" : "min-w-[80px]"}`}
+                                        />
+                                      </div>
+                                    ))}
                                   </div>
-                                  {lineales.length > 0 && (
-                                    <div className="grid grid-cols-4 gap-x-4 gap-y-1 text-left">
-                                      {lineales.slice(0, 4).map((l) => (
-                                        <div key={l}><span className="text-slate-500">{l}:</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[50px] align-baseline" /></div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {lineales.length > 4 && (
-                                    <div className="grid grid-cols-4 gap-x-4 gap-y-1 text-left">
-                                      {lineales.slice(4, 8).map((l) => (
-                                        <div key={l}><span className="text-slate-500">{l}:</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[50px] align-baseline" /></div>
-                                      ))}
-                                    </div>
-                                  )}
-                                  {lineales.length > 8 && (
-                                    <div className="grid grid-cols-7 gap-x-2 gap-y-1 text-left">
-                                      {lineales.slice(8).map((l) => (
-                                        <div key={l}><span className="text-slate-500">{l}</span> <span className="border-b border-slate-300 border-dotted inline-block min-w-[28px] align-baseline" /></div>
-                                      ))}
-                                    </div>
-                                  )}
                                   {tieneDiagnostico && (
                                     <div>
                                       <p className="text-slate-500 mb-0.5">Diagnóstico:</p>
