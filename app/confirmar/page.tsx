@@ -369,7 +369,7 @@ function ConfirmarContent() {
                     </button>
                   )}
                 </div>
-                <div className={`grid gap-3 justify-center ${imagotipos.length > 4 ? "grid-cols-4" : "grid-cols-2"}`}>
+                <div className="grid gap-3 justify-center grid-cols-2">
                   {imagotipos.map((_, i) => (
                     <button
                       key={i}
@@ -778,9 +778,14 @@ function ConfirmarContent() {
                         if (resTarjeta.ok) {
                           const blobCard = await resTarjeta.blob();
                           zip.file(`${baseName}Tarjeta Personal.pdf`, blobCard);
+                        } else {
+                          const errText = await resTarjeta.text().catch(() => "");
+                          console.error("Tarjeta PDF HTTP:", resTarjeta.status, errText);
+                          throw new Error(`Tarjeta PDF falló (${resTarjeta.status}). ${errText || "Sin detalle"}`);
                         }
                       } catch (e) {
                         console.error("Tarjeta PDF:", e);
+                        throw e;
                       }
                       setDownloading("receta");
                       try {
@@ -802,9 +807,14 @@ function ConfirmarContent() {
                         if (resReceta.ok) {
                           const blobReceta = await resReceta.blob();
                           zip.file(`${baseName}Receta.pdf`, blobReceta);
+                        } else {
+                          const errText = await resReceta.text().catch(() => "");
+                          console.error("Receta PDF HTTP:", resReceta.status, errText);
+                          throw new Error(`Receta PDF falló (${resReceta.status}). ${errText || "Sin detalle"}`);
                         }
                       } catch (e) {
                         console.error("Receta PDF:", e);
+                        throw e;
                       }
                       setDownloading("logos");
                       try {

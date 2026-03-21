@@ -7,6 +7,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseAccentColor } from "../../../lib/colors";
 import { launchPdfBrowser } from "../../../lib/server/pdf-browser";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 type PdfFormData = {
   nombreCompleto?: string;
   tituloAbreviado?: string;

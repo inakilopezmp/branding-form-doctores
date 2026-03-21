@@ -8,6 +8,10 @@ import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
 import { launchPdfBrowser } from "../../../lib/server/pdf-browser";
 
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
+
 const CARD_W_MM = 85.6;
 const CARD_H_MM = 53.98;
 
