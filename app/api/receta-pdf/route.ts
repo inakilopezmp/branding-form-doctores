@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { parseAccentColor } from "../../../lib/colors";
+import { launchPdfBrowser } from "../../../lib/server/pdf-browser";
 
 type PdfFormData = {
   nombreCompleto?: string;
@@ -288,15 +289,11 @@ export async function POST(request: NextRequest) {
     const widthMm = isVertical ? sizes.h : sizes.w;
     const heightMm = isVertical ? sizes.w : sizes.h;
 
-    const puppeteer = await import("puppeteer");
-    const browser = await puppeteer.default.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
+    const browser = await launchPdfBrowser();
 
     const page = await browser.newPage();
     await page.setContent(html, {
-      waitUntil: "networkidle0",
+      waitUntil: "domcontentloaded",
       timeout: 15000
     });
     await page.emulateMediaType("print");

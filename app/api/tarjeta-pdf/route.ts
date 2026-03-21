@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import QRCode from "qrcode";
+import { launchPdfBrowser } from "../../../lib/server/pdf-browser";
 
 const CARD_W_MM = 85.6;
 const CARD_H_MM = 53.98;
@@ -129,15 +130,11 @@ export async function POST(request: NextRequest) {
 
     const html = buildTarjetaHtml(formData, isotipoDataUrl, qrDataUrl);
 
-    const puppeteer = await import("puppeteer");
-    const browser = await puppeteer.default.launch({
-      headless: true,
-      args: ["--no-sandbox", "--disable-setuid-sandbox"]
-    });
+    const browser = await launchPdfBrowser();
 
     const page = await browser.newPage();
     await page.setContent(html, {
-      waitUntil: "networkidle0",
+      waitUntil: "domcontentloaded",
       timeout: 15000
     });
     await page.emulateMediaType("print");
